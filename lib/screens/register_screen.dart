@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/auth_service.dart';
@@ -18,8 +19,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _teleponController = TextEditingController();
   final _spesialisasiController = TextEditingController();
   final _authService = AuthService();
+  
   bool _isLoading = false;
-  String? _selectedFile;
+  PlatformFile? _selectedFile;
 
   Future<void> _pickFile() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -29,52 +31,82 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (result != null) {
       setState(() {
-        _selectedFile = result.files.single.path;
+        _selectedFile = result.files.first;
+        print('Selected file path: ${_selectedFile?.path}');
+        print('Selected file name: ${_selectedFile?.name}');
       });
     }
   }
 
   Future<void> _register() async {
-    if (_formKey.currentState!.validate()) {
-      if (_selectedFile == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Silakan upload sertifikat')),
-        );
-        return;
+    // Validasi form
+    if (!_formKey.currentState!.validate()) return;
+
+    // Validasi file
+    if (_selectedFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Silakan upload sertifikat PDF')),
+      );
+      return;
+    }
+
+    // Periksa ukuran file (maksimal 2MB)
+    if (_selectedFile!.size > 2 * 1024 * 1024) { // 2MB
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ukuran file maksimal 2MB')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // Cari path file yang valid
+      String? filePath;
+      if (_selectedFile!.path != null) {
+        filePath = _selectedFile!.path!;
+      } else if (_selectedFile!.bytes != null) {
+        // Jika path null, simpan bytes ke file sementara
+        final tempFile = File('${Directory.systemTemp.path}/${_selectedFile!.name}');
+        await tempFile.writeAsBytes(_selectedFile!.bytes!);
+        filePath = tempFile.path;
       }
 
-      setState(() => _isLoading = true);
-
-      try {
-        final data = {
-          'nama': _namaController.text,
-          'email': _emailController.text,
-          'password': _passwordController.text,
-          'telepon': _teleponController.text,
-          'spesialisasi': _spesialisasiController.text,
-          'persentase_komisi': 0.05,
-          'sertifikat': _selectedFile,
-        };
-
-        final success = await _authService.register(data);
-
-        if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Registrasi berhasil! Silakan login.')),
-          );
-          Navigator.pop(context);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Registrasi gagal. Coba lagi.')),
-          );
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      } finally {
-        setState(() => _isLoading = false);
+      if (filePath == null) {
+        throw Exception('Tidak dapat menemukan path file');
       }
+
+      // Siapkan data untuk registrasi
+      final registrationData = {
+        'nama': _namaController.text,
+        'email': _emailController.text,
+        'password': _passwordController.text,
+        'telepon': _teleponController.text,
+        'spesialisasi': _spesialisasiController.text.isEmpty 
+          ? null 
+          : _spesialisasiController.text,
+        'sertifikat': filePath, // Path file
+      };
+
+      // Panggil metode register
+      final success = await _authService.register(registrationData);
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Registrasi berhasil! Silakan login.')),
+        );
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Registrasi gagal. Coba lagi.')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -142,12 +174,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               CustomTextField(
                 controller: _spesialisasiController,
-                label: 'Spesialisasi',
+                label: 'Spesialisasi (Opsional)',
               ),
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: _pickFile,
-                child: Text(_selectedFile != null ? 'Sertifikat: $_selectedFile' : 'Upload Sertifikat'),
+                child: Text(_selectedFile != null 
+                  ? 'Sertifikat: ${_selectedFile!.name}' 
+                  : 'Upload Sertifikat'),
               ),
               const SizedBox(height: 24),
               SizedBox(

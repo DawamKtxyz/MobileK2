@@ -24,10 +24,13 @@ class Barber {
       email: json['email'],
       telepon: json['telepon'],
       spesialisasi: json['spesialisasi'],
-      persentaseKomisi: double.parse(json['persentase_komisi'].toString()),
+      persentaseKomisi: json['persentase_komisi'] != null
+          ? double.tryParse(json['persentase_komisi'].toString()) ?? 0.0
+          : 0.0,
       sertifikat: json['sertifikat'],
     );
   }
+
 
   Map<String, dynamic> toJson() {
     return {

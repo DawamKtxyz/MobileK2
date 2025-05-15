@@ -30,42 +30,51 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _spesialisasiController = TextEditingController(text: widget.barber.spesialisasi);
   }
 
-  Future<void> _updateProfile() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
+Future<void> _updateProfile() async {
+  if (_formKey.currentState!.validate()) {
+    setState(() => _isLoading = true);
 
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString('token');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
 
-        final response = await _apiService.post(
-          Constants.updateProfileEndpoint,
-          {
-            'nama': _namaController.text,
-            'telepon': _teleponController.text,
-            'spesialisasi': _spesialisasiController.text,
-          },
-        );
-
-        if (response['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Profil berhasil diperbarui')),
-          );
-          Navigator.pop(context, true);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Gagal memperbarui profil')),
-          );
-        }
-      } catch (e) {
+      if (token == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          const SnackBar(content: Text('Token tidak ditemukan. Silakan login kembali.')),
         );
-      } finally {
-        setState(() => _isLoading = false);
+        return;
       }
+
+      final response = await _apiService.post(
+        Constants.updateProfileEndpoint,
+        {
+          'nama': _namaController.text,
+          'telepon': _teleponController.text,
+          'spesialisasi': _spesialisasiController.text,
+        },
+        token: token, // Menambahkan token ke header
+      );
+
+      if (response['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profil berhasil diperbarui')),
+        );
+        Navigator.pop(context, true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal memperbarui profil')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
+}
+
 
   @override
   Widget build(BuildContext context) {
