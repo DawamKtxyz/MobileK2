@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/auth_service.dart';
@@ -19,7 +18,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _teleponController = TextEditingController();
   final _spesialisasiController = TextEditingController();
   final _authService = AuthService();
-  
+
   bool _isLoading = false;
   PlatformFile? _selectedFile;
 
@@ -32,17 +31,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (result != null) {
       setState(() {
         _selectedFile = result.files.first;
-        print('Selected file path: ${_selectedFile?.path}');
-        print('Selected file name: ${_selectedFile?.name}');
       });
     }
   }
 
   Future<void> _register() async {
-    // Validasi form
     if (!_formKey.currentState!.validate()) return;
 
-    // Validasi file
     if (_selectedFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Silakan upload sertifikat PDF')),
@@ -50,8 +45,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    // Periksa ukuran file (maksimal 2MB)
-    if (_selectedFile!.size > 2 * 1024 * 1024) { // 2MB
+    if (_selectedFile!.size > 2 * 1024 * 1024) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ukuran file maksimal 2MB')),
       );
@@ -61,35 +55,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Cari path file yang valid
-      String? filePath;
-      if (_selectedFile!.path != null) {
-        filePath = _selectedFile!.path!;
-      } else if (_selectedFile!.bytes != null) {
-        // Jika path null, simpan bytes ke file sementara
-        final tempFile = File('${Directory.systemTemp.path}/${_selectedFile!.name}');
-        await tempFile.writeAsBytes(_selectedFile!.bytes!);
-        filePath = tempFile.path;
-      }
-
-      if (filePath == null) {
-        throw Exception('Tidak dapat menemukan path file');
-      }
-
-      // Siapkan data untuk registrasi
       final registrationData = {
         'nama': _namaController.text,
         'email': _emailController.text,
         'password': _passwordController.text,
         'telepon': _teleponController.text,
-        'spesialisasi': _spesialisasiController.text.isEmpty 
-          ? null 
-          : _spesialisasiController.text,
-        'sertifikat': filePath, // Path file
+        'spesialisasi': _spesialisasiController.text.isEmpty
+            ? ''
+            : _spesialisasiController.text,
       };
 
-      // Panggil metode register
-      final success = await _authService.register(registrationData);
+      final success = await _authService.register(
+        registrationData,
+        file: _selectedFile,
+      );
 
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -126,24 +105,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
               CustomTextField(
                 controller: _namaController,
                 label: 'Nama Lengkap',
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Nama tidak boleh kosong';
-                  }
-                  return null;
-                },
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Nama tidak boleh kosong' : null,
               ),
               CustomTextField(
                 controller: _emailController,
                 label: 'Email',
                 keyboardType: TextInputType.emailAddress,
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Email tidak boleh kosong';
-                  }
-                  if (!value.contains('@')) {
-                    return 'Email tidak valid';
-                  }
+                  if (value == null || value.isEmpty) return 'Email tidak boleh kosong';
+                  if (!value.contains('@')) return 'Email tidak valid';
                   return null;
                 },
               ),
@@ -152,12 +123,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 label: 'Password',
                 obscureText: true,
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Password tidak boleh kosong';
-                  }
-                  if (value.length < 6) {
-                    return 'Password minimal 6 karakter';
-                  }
+                  if (value == null || value.isEmpty) return 'Password tidak boleh kosong';
+                  if (value.length < 6) return 'Password minimal 6 karakter';
                   return null;
                 },
               ),
@@ -165,12 +132,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 controller: _teleponController,
                 label: 'Nomor Telepon',
                 keyboardType: TextInputType.phone,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Nomor telepon tidak boleh kosong';
-                  }
-                  return null;
-                },
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'Nomor telepon tidak boleh kosong' : null,
               ),
               CustomTextField(
                 controller: _spesialisasiController,
@@ -179,9 +142,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: _pickFile,
-                child: Text(_selectedFile != null 
-                  ? 'Sertifikat: ${_selectedFile!.name}' 
-                  : 'Upload Sertifikat'),
+                child: Text(
+                  _selectedFile != null
+                      ? 'Sertifikat: ${_selectedFile!.name}'
+                      : 'Upload Sertifikat (PDF)',
+                ),
               ),
               const SizedBox(height: 24),
               SizedBox(
