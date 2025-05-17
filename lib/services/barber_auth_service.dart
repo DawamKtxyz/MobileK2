@@ -78,54 +78,66 @@ class BarberAuthService {
     }
   }
 
-  Future<bool> register(Map<String, dynamic> data) async {
-    try {
-      final url = _getUrl('barber/register');
-      print('Registering barber at: $url');
-      print('Registration data: $data');
+Future<bool> register(Map<String, dynamic> data) async {
+  try {
+    final url = _getUrl('barber/register');
+    print('Registering barber at: $url');
+    print('Registration data: $data');
 
-      var request = http.MultipartRequest('POST', Uri.parse(url));
+    var request = http.MultipartRequest('POST', Uri.parse(url));
 
-      data.forEach((key, value) {
-        if (key != 'sertifikat' && value != null) {
+    data.forEach((key, value) {
+      if (key != 'sertifikat' && value != null) {
+        // Perlakukan field harga secara khusus
+        if (key == 'harga') {
+          // Pastikan harga dikirim sebagai string angka yang valid
+          String hargaStr = value.toString().replaceAll('Rp ', '').trim();
+          hargaStr = hargaStr.replaceAll('.', '');
+          request.fields[key] = hargaStr;
+          print('Sending harga: $hargaStr'); // Log untuk debugging
+        } else {
           request.fields[key] = value.toString();
         }
-      });
-
-      if (data['sertifikat'] != null) {
-        request.files.add(
-          await http.MultipartFile.fromPath(
-            'sertifikat',
-            data['sertifikat'],
-            filename: data['sertifikat'].split('/').last,
-          ),
-        );
       }
+    });
 
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-
-      print('Registration Response Status: ${response.statusCode}');
-      print('Registration Response Body: ${response.body}');
-
-      final responseBody = json.decode(response.body);
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        if (responseBody['success'] == true) {
-          print('Registration successful!');
-          return true;
-        } else {
-          print('Registration failed: ${responseBody['message'] ?? 'Unknown error'}');
-          return false;
-        }
-      } else {
-        throw Exception(responseBody['message'] ?? 'Registration failed with status ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Register exception: $e');
-      throw Exception('Register failed: $e');
+    if (data['sertifikat'] != null) {
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'sertifikat',
+          data['sertifikat'],
+          filename: data['sertifikat'].split('/').last,
+        ),
+      );
     }
+
+    // Debug: print semua fields yang dikirim
+    print('All fields being sent: ${request.fields}');
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+
+    print('Registration Response Status: ${response.statusCode}');
+    print('Registration Response Body: ${response.body}');
+
+    final responseBody = json.decode(response.body);
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (responseBody['success'] == true) {
+        print('Registration successful!');
+        return true;
+      } else {
+        print('Registration failed: ${responseBody['message'] ?? 'Unknown error'}');
+        return false;
+      }
+    } else {
+      throw Exception(responseBody['message'] ?? 'Registration failed with status ${response.statusCode}');
+    }
+  } catch (e) {
+    print('Register exception: $e');
+    throw Exception('Register failed: $e');
   }
+}
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();

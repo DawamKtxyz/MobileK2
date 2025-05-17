@@ -6,6 +6,7 @@ class Barber {
   final String? spesialisasi;
   final double persentaseKomisi;
   final String sertifikat;
+  final double harga; // Added harga field
 
   Barber({
     required this.id,
@@ -15,6 +16,7 @@ class Barber {
     this.spesialisasi,
     required this.persentaseKomisi,
     required this.sertifikat,
+    required this.harga, // Added to constructor
   });
 
   factory Barber.fromJson(Map<String, dynamic> json) {
@@ -28,9 +30,11 @@ class Barber {
           ? double.tryParse(json['persentase_komisi'].toString()) ?? 0.0
           : 0.0,
       sertifikat: json['sertifikat'],
+      harga: json['harga'] != null
+          ? double.tryParse(json['harga'].toString()) ?? 20000.0
+          : 20000.0, // Default to 20000 if null
     );
   }
-
 
   Map<String, dynamic> toJson() {
     return {
@@ -41,6 +45,7 @@ class Barber {
       'spesialisasi': spesialisasi,
       'persentase_komisi': persentaseKomisi,
       'sertifikat': sertifikat,
+      'harga': harga, // Added to JSON serialization
     };
   }
 }
