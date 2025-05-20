@@ -22,18 +22,123 @@ class Booking {
   });
 
   factory Booking.fromJson(Map<String, dynamic> json) {
-    return Booking(
-      id: json['id'],
-      idTransaksi: json['id_transaksi'],
-      barber: BarberInfo.fromJson(json['barber']),
-      schedule: ScheduleInfo.fromJson(json['schedule']),
-      bookingDetails: BookingDetails.fromJson(json['booking_details'] ?? json['booking_info'] ?? {}),
-      status: json['status'] ?? 'pending',
-      canCancel: json['can_cancel'] ?? false,
-      createdAt: DateTime.parse(json['created_at']),
-      timeUntilAppointment: json['time_until_appointment'],
-    );
+
+     Map<String, dynamic> barberData = {};
+  Map<String, dynamic> scheduleData = {};
+  Map<String, dynamic> bookingDetailsData = {};
+  
+    if (json['jadwal'] != null) {
+    // Respons dari getMyBookings()
+    scheduleData = {
+      'date': json['jadwal']['tanggal'] ?? '',
+      'time': json['jadwal']['jam'] ?? '',
+    };
+  } else if (json['schedule'] != null) {
+    // Alternatif format
+    scheduleData = json['schedule'];
   }
+  
+  if (json['barber'] != null) {
+    barberData = json['barber'];
+  } else if (json['tukang_cukur'] != null) {
+    barberData = json['tukang_cukur'];
+  } else {
+    // Jika tidak ada data barber, buat barber default dari id_barber
+    if (json['id_barber'] != null) {
+  var barberId = json['id_barber'];
+  if (barberId is String) {
+    barberId = int.tryParse(barberId) ?? 0;
+  }
+  barberData = {
+    'id': barberId,
+    'nama': 'Barber #$barberId',
+  };
+} else {
+      barberData = {'id': 0, 'nama': 'Unknown Barber'};
+    }
+  }
+  
+  // Persiapkan data booking details
+  if (json['booking_details'] != null) {
+    bookingDetailsData = json['booking_details'];
+  } else if (json['booking_info'] != null) {
+    bookingDetailsData = json['booking_info'];
+  } else {
+    // Buat booking details dari data yang tersedia
+    bookingDetailsData = {
+      'alamat_lengkap': json['alamat_lengkap'],
+      'email': json['email'],
+      'telepon': json['telepon'],
+      'total_amount': json['nominal'],
+      'ongkos_kirim': json['ongkos_kirim'] ?? 0,
+      'service_fee': (json['nominal'] != null && json['ongkos_kirim'] != null) 
+          ? (double.tryParse(json['nominal'].toString()) ?? 0) - 
+            (double.tryParse(json['ongkos_kirim'].toString()) ?? 0)
+          : 0,
+    };
+  }
+
+  // Tentukan status booking berdasarkan tanggal
+  String status = json['status'] ?? 'pending';
+  if (status == 'pending' && scheduleData['date'] != null) {
+    try {
+      DateTime bookingDate = DateTime.parse(scheduleData['date']);
+      if (bookingDate.isBefore(DateTime.now())) {
+        status = 'completed';
+      } else {
+        status = 'upcoming';
+      }
+    } catch (e) {
+      // Jika parsing gagal, gunakan default
+      status = 'upcoming';
+    }
+  }
+
+  // Tentukan apakah booking bisa dibatalkan
+  bool canCancel = json['can_cancel'] ?? false;
+  if (!canCancel && status == 'upcoming') {
+    canCancel = true; // Defaultnya booking yang upcoming bisa dibatalkan
+  }
+
+  // Hitung waktu tersisa sampai janji
+  String? timeUntilAppointment;
+  if (json['time_until_appointment'] != null) {
+    timeUntilAppointment = json['time_until_appointment'];
+  } else if (scheduleData['date'] != null && scheduleData['time'] != null) {
+    try {
+      DateTime bookingDateTime = DateTime.parse('${scheduleData['date']} ${scheduleData['time']}:00');
+      Duration timeLeft = bookingDateTime.difference(DateTime.now());
+      
+      if (timeLeft.isNegative) {
+        timeUntilAppointment = "Sudah lewat";
+      } else if (timeLeft.inDays > 0) {
+        timeUntilAppointment = "${timeLeft.inDays} hari lagi";
+      } else if (timeLeft.inHours > 0) {
+        timeUntilAppointment = "${timeLeft.inHours} jam lagi";
+      } else if (timeLeft.inMinutes > 0) {
+        timeUntilAppointment = "${timeLeft.inMinutes} menit lagi";
+      } else {
+        timeUntilAppointment = "Sebentar lagi";
+      }
+    } catch (e) {
+      // Jika parsing gagal, biarkan null
+    }
+  }
+
+  return Booking(
+    id: json['id'] ?? 0,
+    idTransaksi: json['id_transaksi'] ?? 'Unknown',
+    barber: BarberInfo.fromJson(barberData),
+    schedule: ScheduleInfo.fromJson(scheduleData),
+    bookingDetails: BookingDetails.fromJson(bookingDetailsData),
+    status: status,
+    canCancel: canCancel,
+    createdAt: json['created_at'] != null 
+        ? DateTime.parse(json['created_at']) 
+        : DateTime.now(),
+    timeUntilAppointment: timeUntilAppointment,
+  );
+}
 
   Map<String, dynamic> toJson() {
     return {
@@ -65,10 +170,18 @@ class BarberInfo {
     this.email,
   });
 
-  factory BarberInfo.fromJson(Map<String, dynamic> json) {
+   factory BarberInfo.fromJson(Map<String, dynamic> json) {
+    // Convert id to int if it's a string
+    int id;
+    if (json['id'] is String) {
+      id = int.tryParse(json['id']) ?? 0;
+    } else {
+      id = json['id'] ?? 0;
+    }
+    
     return BarberInfo(
-      id: json['id'],
-      nama: json['nama'],
+      id: id,
+      nama: json['nama'] ?? 'Unknown',
       spesialisasi: json['spesialisasi'],
       telepon: json['telepon'],
       email: json['email'],
@@ -84,8 +197,15 @@ class BarberInfo {
       'email': email,
     };
   }
-}
 
+  // Factory method untuk default value
+  factory BarberInfo.defaultValue() {
+    return BarberInfo(
+      id: 0,
+      nama: 'Unknown Barber',
+    );
+  }
+}
 class ScheduleInfo {
   final String date;
   final String time;
@@ -102,14 +222,51 @@ class ScheduleInfo {
   });
 
   factory ScheduleInfo.fromJson(Map<String, dynamic> json) {
-    return ScheduleInfo(
-      date: json['date'],
-      time: json['time'],
-      dayName: json['day_name'],
-      formattedDate: json['formatted_date'],
-      formattedDatetime: json['formatted_datetime'],
-    );
+  String date = '';
+  String time = '';
+  
+  // Handle berbagai format date dan time
+  if (json['date'] != null) {
+    date = json['date']; 
+  } else if (json['tanggal'] != null) {
+    // Jika format tanggal adalah datetime (seperti dari DB)
+    String tanggalStr = json['tanggal'].toString();
+    if (tanggalStr.contains('T')) {
+      date = tanggalStr.split('T')[0];
+    } else {
+      date = tanggalStr;
+    }
   }
+  
+  if (json['time'] != null) {
+    time = json['time'].toString();
+  } else if (json['jam'] != null) {
+    time = json['jam'].toString();
+    // Jika jam masih dalam format datetime, ekstrak waktu saja
+    if (time.contains(':00.000000Z')) {
+      time = time.split(':00.000000Z')[0];
+    }
+  }
+  
+  // Generate formattedDate jika tidak ada
+  String? formattedDate = json['formatted_date']?.toString();
+  if (formattedDate == null && date.isNotEmpty) {
+    try {
+      final dateObj = DateTime.parse(date);
+      formattedDate = "${dateObj.day}/${dateObj.month}/${dateObj.year}";
+    } catch (e) {
+      // Biarkan null jika parsing gagal
+    }
+  }
+  
+  return ScheduleInfo(
+    date: date,
+    time: time,
+    dayName: json['day_name']?.toString(),
+    formattedDate: formattedDate,
+    formattedDatetime: json['formatted_datetime']?.toString(),
+  );
+}
 
   Map<String, dynamic> toJson() {
     return {
@@ -251,12 +408,30 @@ class BookingInfo {
   });
 
   factory BookingInfo.fromJson(Map<String, dynamic> json) {
-    return BookingInfo(
-      id: json['id'],
-      pelangganNama: json['pelanggan_nama'] ?? 'Unknown',
-      nominal: double.tryParse(json['nominal'].toString()) ?? 0.0,
-    );
+  // Convert id to int if it's a string
+  int id;
+  if (json['id'] is String) {
+    id = int.tryParse(json['id']) ?? 0;
+  } else {
+    id = json['id'] ?? 0;
   }
+  
+  // Parse nominal safely
+  double nominal = 0.0;
+  if (json['nominal'] != null) {
+    if (json['nominal'] is String) {
+      nominal = double.tryParse(json['nominal']) ?? 0.0;
+    } else if (json['nominal'] is num) {
+      nominal = (json['nominal'] as num).toDouble();
+    }
+  }
+  
+  return BookingInfo(
+    id: id,
+    pelangganNama: json['pelanggan_nama']?.toString() ?? 'Unknown',
+    nominal: nominal,
+  );
+}
 
   Map<String, dynamic> toJson() {
     return {
@@ -380,4 +555,34 @@ class PaginationInfo {
       'has_more': hasMore,
     };
   }
+  // Di kelas Booking, tambahkan static method:
+static T? _safelyParseProperty<T>(dynamic value, T defaultValue) {
+  if (value == null) return defaultValue;
+  if (value is T) return value;
+  
+  // Konversi khusus untuk beberapa tipe
+  if (T == int) {
+    if (value is String) {
+      return int.tryParse(value) as T? ?? defaultValue;
+    }
+    if (value is double) {
+      return value.toInt() as T? ?? defaultValue;
+    }
+  }
+  
+  if (T == double) {
+    if (value is String) {
+      return double.tryParse(value) as T? ?? defaultValue;
+    }
+    if (value is int) {
+      return value.toDouble() as T? ?? defaultValue;
+    }
+  }
+  
+  if (T == String) {
+    return value.toString() as T? ?? defaultValue;
+  }
+  
+  return defaultValue;
+}
 }

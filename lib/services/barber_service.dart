@@ -168,22 +168,60 @@ class BarberService {
   // ========== Statistics ==========
 
   /// Get barber statistics
-  Future<Map<String, dynamic>> getStats(int barberId) async {
-    try {
-      final url = _getUrl('barber/stats/$barberId');
-      final headers = await _getHeaders();
+ // Di barber_service.dart, pada method getStats
+Future<Map<String, dynamic>> getStats(int barberId) async {
+  try {
+    final url = _getUrl('barber/stats/$barberId');
+    final headers = await _getHeaders();
 
-      final response = await http.get(Uri.parse(url), headers: headers);
+    final response = await http.get(Uri.parse(url), headers: headers);
+    
+    // Log response untuk debugging
+    print('Debug - Stats API Raw Response: ${response.statusCode}, ${response.body}');
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        throw Exception('Failed to get stats: ${response.statusCode}');
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      // Pengecekan dan normalisasi data
+      if (data == null) {
+        return {
+          'success': true,
+          'stats': {
+            'total_bookings_today': 0,
+            'available_slots_today': 0,
+            'total_bookings_this_month': 0,
+            'formatted_revenue_this_month': 'Rp 0'
+          }
+        };
       }
-    } catch (e) {
-      throw Exception('Error getting stats: $e');
+      return data;
+    } else {
+      // Handle non-success status code
+      return {
+        'success': false, 
+        'message': 'Failed to get stats: ${response.statusCode}',
+        'stats': {
+          'total_bookings_today': 0,
+          'available_slots_today': 0,
+          'total_bookings_this_month': 0,
+          'formatted_revenue_this_month': 'Rp 0'
+        }
+      };
     }
+  } catch (e) {
+    // Mengembalikan data default jika terjadi error
+    print('Debug - Error in getStats service: $e');
+    return {
+      'success': false,
+      'message': 'Error getting stats: $e',
+      'stats': {
+        'total_bookings_today': 0,
+        'available_slots_today': 0,
+        'total_bookings_this_month': 0,
+        'formatted_revenue_this_month': 'Rp 0'
+      }
+    };
   }
+}
 
   // ========== Helper Methods ==========
 

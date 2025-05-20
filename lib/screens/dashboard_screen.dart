@@ -81,25 +81,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadBarberData() async {
+  try {
+    setState(() => _isLoadingData = true);
+    
+    // Inisialisasi nilai default untuk stats terlebih dahulu
+    setState(() => _stats = {
+      'total_bookings_today': 0,
+      'available_slots_today': 0,
+      'total_bookings_this_month': 0,
+      'formatted_revenue_this_month': 'Rp 0'
+    });
+
+    // Debug print untuk user ID
+    print('Debug - User ID: ${_userData?.id}');
+
+    // Get schedules with full error handling
     try {
-      setState(() => _isLoadingData = true);
-
-      // Load schedules, bookings, and stats in parallel
-      final futures = await Future.wait([
-        _barberService.getMySchedules(),
-        _barberService.getMyBookings(),
-        _barberService.getStats(_userData.id),
-      ]);
-
-      final schedulesData = futures[0];
-      final bookingsData = futures[1];
-      final statsData = futures[2];
-
-      if (schedulesData['success']) {
+      final schedulesData = await _barberService.getMySchedules();
+      print('Debug - Schedules Response: $schedulesData');
+      
+      if (schedulesData != null && schedulesData['success'] == true && schedulesData['schedules'] != null) {
         final schedulesResponse = schedulesData['schedules'];
         final Map<String, List<Schedule>> formattedSchedules = {};
         
-        // Handle both Map and Object responses
         if (schedulesResponse is Map<String, dynamic>) {
           schedulesResponse.forEach((date, scheduleList) {
             if (scheduleList is List) {
@@ -112,28 +116,63 @@ class _DashboardScreenState extends State<DashboardScreen> {
         
         setState(() => _schedules = formattedSchedules);
       }
+    } catch (scheduleError) {
+      print('Debug - Error loading schedules: $scheduleError');
+    }
 
-      if (bookingsData['success']) {
-        final bookingsList = bookingsData['bookings'];
-        if (bookingsList is List) {
-          setState(() => _bookings = bookingsList
-              .map((item) => Booking.fromJson(item))
-              .toList());
+    // Get bookings with full error handling
+   try {
+  final bookingsData = await _barberService.getMyBookings();
+  print('Debug - Bookings Response: $bookingsData');
+  
+  if (bookingsData != null && bookingsData['success'] == true && bookingsData['bookings'] != null) {
+    final bookingsList = bookingsData['bookings'];
+    if (bookingsList is List) {
+      // Tambahkan try-catch di sini untuk menangkap error pada setiap item
+      final processedBookings = <Booking>[];
+      for (var item in bookingsList) {
+        try {
+          processedBookings.add(Booking.fromJson(item));
+        } catch (e) {
+          print('Debug - Error processing booking item: $e');
+          // Skip item yang bermasalah
         }
       }
-
-      if (statsData['success']) {
-        setState(() => _stats = statsData['stats']);
-      }
-    } catch (e) {
-      print('Debug - Error loading barber data: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading barber data: $e')),
-      );
-    } finally {
-      setState(() => _isLoadingData = false);
+      setState(() => _bookings = processedBookings);
     }
   }
+} catch (bookingError) {
+  print('Debug - Error loading bookings: $bookingError');
+}
+
+    // Get stats with full error handling
+    try {
+      // Verifikasi ID terlebih dahulu
+      if (_userData?.id == null) {
+        print('Debug - User ID is null, skipping stats');
+        return;
+      }
+      
+      print('Debug - Before getStats call');
+      final statsData = await _barberService.getStats(_userData.id);
+      print('Debug - Stats Response: $statsData');
+      
+      if (statsData != null && statsData['success'] == true && statsData['stats'] != null) {
+        setState(() => _stats = statsData['stats']);
+      }
+    } catch (statError) {
+      print('Debug - Error loading stats data: $statError');
+    }
+    
+  } catch (e) {
+    print('Debug - General error in _loadBarberData: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error loading barber data: $e')),
+    );
+  } finally {
+    setState(() => _isLoadingData = false);
+  }
+}
 
   Future<void> _loadPelangganData() async {
     try {

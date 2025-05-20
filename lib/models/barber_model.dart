@@ -19,22 +19,23 @@ class Barber {
     required this.harga, // Added to constructor
   });
 
-  factory Barber.fromJson(Map<String, dynamic> json) {
-    return Barber(
-      id: json['id'],
-      nama: json['nama'],
-      email: json['email'],
-      telepon: json['telepon'],
-      spesialisasi: json['spesialisasi'],
-      persentaseKomisi: json['persentase_komisi'] != null
-          ? double.tryParse(json['persentase_komisi'].toString()) ?? 0.0
-          : 0.0,
-      sertifikat: json['sertifikat'],
-      harga: json['harga'] != null
-          ? double.tryParse(json['harga'].toString()) ?? 20000.0
-          : 20000.0, // Default to 20000 if null
-    );
-  }
+ factory Barber.fromJson(Map<String, dynamic> json) {
+  // Pastikan semua field memiliki nilai default yang aman jika null
+  return Barber(
+    id: json['id'] ?? 0,
+    nama: json['nama'] ?? '',
+    email: json['email'] ?? '',
+    telepon: json['telepon'] ?? '',
+    spesialisasi: json['spesialisasi'],
+    persentaseKomisi: json['persentase_komisi'] != null
+        ? double.tryParse(json['persentase_komisi'].toString()) ?? 0.0
+        : 0.0,
+    sertifikat: json['sertifikat'] ?? '',
+    harga: json['harga'] != null
+        ? double.tryParse(json['harga'].toString()) ?? 20000.0
+        : 20000.0,
+  );
+}
 
   Map<String, dynamic> toJson() {
     return {

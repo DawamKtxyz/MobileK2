@@ -207,48 +207,82 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<Map<String, dynamic>> _updateBarberProfile(Map<String, dynamic> data) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(Constants.keyBarberToken);
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString(Constants.keyBarberToken);
+  
+  if (token == null) {
+    throw Exception('Token tidak ditemukan');
+  }
+
+  // Pastikan harga dalam format yang benar
+  if (data.containsKey('harga')) {
+    // Log untuk debugging
+    print('Sending harga to API: ${data['harga']}');
     
-    if (token == null) {
-      throw Exception('Token tidak ditemukan');
-    }
-
-    // Call API directly using http - Update endpoint to match Laravel routes
-    final url = '${Constants.baseUrl}/barber/update-profile';
-    final response = await http.post(
-      Uri.parse(url),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $token',
-        'X-Requested-With': 'XMLHttpRequest',
-      },
-      body: json.encode(data),
-    );
-
-    final responseBody = json.decode(response.body);
-
-    if (response.statusCode == 200 && responseBody['success'] == true) {
-      return responseBody;
-    } else {
-      throw Exception(responseBody['message'] ?? 'Gagal memperbarui profil');
+    // Pastikan harga adalah integer yang valid
+    if (data['harga'] is String) {
+      data['harga'] = int.tryParse(data['harga']) ?? widget.userData.harga.toInt();
     }
   }
+
+  // Call API
+  final url = '${Constants.baseUrl}/barber/update-profile';
+  final response = await http.post(
+    Uri.parse(url),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $token',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    body: json.encode(data),
+  );
+
+  final responseBody = json.decode(response.body);
+  print('Profile update response: $responseBody'); // Debug log
+
+  if (response.statusCode == 200 && responseBody['success'] == true) {
+    // Pastikan barber data lengkap
+    if (responseBody['barber'] != null) {
+      // Pastikan harga tersedia di respons
+      var barberData = responseBody['barber'];
+      if (barberData['harga'] == null) {
+        barberData['harga'] = data['harga'] ?? widget.userData.harga;
+      }
+      responseBody['barber'] = barberData;
+    }
+    
+    return responseBody;
+  } else {
+    throw Exception(responseBody['message'] ?? 'Gagal memperbarui profil');
+  }
+}
 
   Future<void> _updateLocalStorage(Map<String, dynamic> result) async {
-    final prefs = await SharedPreferences.getInstance();
+  final prefs = await SharedPreferences.getInstance();
     
-    if (widget.userType == UserType.pelanggan && result['pelanggan'] != null) {
-      // Update both 'pelanggan' and 'pelanggan_data' keys to be safe
-      await prefs.setString(Constants.keyPelangganData, jsonEncode(result['pelanggan']));
-      await prefs.setString('pelanggan', jsonEncode(result['pelanggan']));
-    } else if (widget.userType == UserType.barber && result['barber'] != null) {
-      // Update both 'barber' and 'barber_data' keys to be safe
-      await prefs.setString(Constants.keyBarberData, jsonEncode(result['barber']));
-      await prefs.setString('barber', jsonEncode(result['barber']));
+    // Debug output untuk melihat data yang diterima
+  print('Result data for storage update: $result');
+  
+  if (widget.userType == UserType.pelanggan && result['pelanggan'] != null) {
+    // Update 'pelanggan' key dengan data lengkap
+    await prefs.setString('pelanggan', jsonEncode(result['pelanggan']));
+  } else if (widget.userType == UserType.barber && result['barber'] != null) {
+    // Pastikan semua field yang diperlukan ada di data barber
+    var barberData = result['barber'];
+    
+    // Pastikan field harga tersedia dan diparse dengan benar
+    if (barberData['harga'] == null) {
+      // Gunakan harga dari form jika tidak ada dari server
+      barberData['harga'] = double.tryParse(_hargaController.text) ?? widget.userData.harga;
     }
+    
+    await prefs.setString('barber', jsonEncode(barberData));
+    
+    // Debug output
+    print('Updated barber data in storage: $barberData');
   }
+}
 
   @override
   Widget build(BuildContext context) {
