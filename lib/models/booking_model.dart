@@ -8,7 +8,8 @@ class Booking {
   final bool canCancel;
   final DateTime createdAt;
   final String? timeUntilAppointment;
-
+  final String pelangganNama;
+  
   Booking({
     required this.id,
     required this.idTransaksi,
@@ -19,6 +20,7 @@ class Booking {
     required this.canCancel,
     required this.createdAt,
     this.timeUntilAppointment,
+    this.pelangganNama = 'Tidak tersedia', // Default value
   });
 
   factory Booking.fromJson(Map<String, dynamic> json) {
@@ -76,6 +78,13 @@ class Booking {
             (double.tryParse(json['ongkos_kirim'].toString()) ?? 0)
           : 0,
     };
+  }
+
+   String pelangganNama = 'Tidak tersedia';
+  if (json['pelanggan'] != null && json['pelanggan']['nama'] != null) {
+    pelangganNama = json['pelanggan']['nama'];
+  } else if (json['id_pelanggan'] != null) {
+    pelangganNama = 'Pelanggan #${json['id_pelanggan']}';
   }
 
   // Tentukan status booking berdasarkan tanggal
@@ -137,6 +146,7 @@ class Booking {
         ? DateTime.parse(json['created_at']) 
         : DateTime.now(),
     timeUntilAppointment: timeUntilAppointment,
+     pelangganNama: pelangganNama, // Tambahkan ini
   );
 }
 
@@ -400,6 +410,8 @@ class BookingInfo {
   final int id;
   final String pelangganNama;
   final double nominal;
+
+  
 
   BookingInfo({
     required this.id,

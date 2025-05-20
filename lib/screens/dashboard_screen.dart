@@ -18,11 +18,43 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+
   UserType? _userType;
   dynamic _userData;
   bool _isLoading = true;
   int _selectedIndex = 0;
   String _selectedFilter = 'Semua';
+  String _sortBy = 'nama';
+  bool _isDarkMode = false;
+  bool _isScheduleTab = true;
+
+  // Method untuk toggle dark mode
+void _toggleDarkMode() {
+  setState(() {
+    _isDarkMode = !_isDarkMode;
+    // Simpan preferensi di SharedPreferences
+    _saveDarkModePreference();
+  });
+  
+  // Tampilkan snackbar konfirmasi
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(_isDarkMode ? 'Dark mode aktif' : 'Light mode aktif')),
+  );
+}
+
+// Method untuk menyimpan preferensi
+Future<void> _saveDarkModePreference() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setBool('dark_mode', _isDarkMode);
+}
+
+// Method untuk mendapatkan preferensi saat startup
+Future<void> _loadDarkModePreference() async {
+  final prefs = await SharedPreferences.getInstance();
+  setState(() {
+    _isDarkMode = prefs.getBool('dark_mode') ?? false;
+  });
+}
 
   // Services
   final BarberService _barberService = BarberService();
@@ -38,11 +70,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isLoadingData = false;
   String _searchQuery = '';
   String _selectedDate = DateTime.now().toIso8601String().split('T')[0];
+    bool _isActiveTab = true;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadDarkModePreference();
   }
 
   Future<void> _loadUserData() async {
@@ -121,29 +155,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     // Get bookings with full error handling
-   try {
-  final bookingsData = await _barberService.getMyBookings();
-  print('Debug - Bookings Response: $bookingsData');
-  
-  if (bookingsData != null && bookingsData['success'] == true && bookingsData['bookings'] != null) {
-    final bookingsList = bookingsData['bookings'];
-    if (bookingsList is List) {
-      // Tambahkan try-catch di sini untuk menangkap error pada setiap item
-      final processedBookings = <Booking>[];
-      for (var item in bookingsList) {
-        try {
-          processedBookings.add(Booking.fromJson(item));
-        } catch (e) {
-          print('Debug - Error processing booking item: $e');
-          // Skip item yang bermasalah
+    try {
+      final bookingsData = await _barberService.getMyBookings();
+      print('Debug - Bookings Response: $bookingsData');
+      
+      if (bookingsData != null && bookingsData['success'] == true && bookingsData['bookings'] != null) {
+        final bookingsList = bookingsData['bookings'];
+        if (bookingsList is List) {
+          // Tambahkan try-catch di sini untuk menangkap error pada setiap item
+          final processedBookings = <Booking>[];
+          for (var item in bookingsList) {
+            try {
+              final booking = Booking.fromJson(item);
+              // Proses nama pelanggan sudah ada di fromJson
+              processedBookings.add(booking);
+            } catch (e) {
+              print('Debug - Error processing booking item: $e');
+              // Skip item yang bermasalah
+            }
+          }
+          setState(() => _bookings = processedBookings);
         }
       }
-      setState(() => _bookings = processedBookings);
+    } catch (bookingError) {
+      print('Debug - Error loading bookings: $bookingError');
     }
-  }
-} catch (bookingError) {
-  print('Debug - Error loading bookings: $bookingError');
-}
 
     // Get stats with full error handling
     try {
@@ -215,28 +251,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _searchBarbers(String query) async {
-    setState(() => _searchQuery = query);
-    
-    try {
-      setState(() => _isLoadingData = true);
+  setState(() => _searchQuery = query);
+  
+  try {
+    setState(() => _isLoadingData = true);
 
-      final result = await _pelangganService.searchBarbers(
-        search: query.isEmpty ? null : query,
-      );
+    final result = await _pelangganService.searchBarbers(
+      search: query.isEmpty ? null : query,
+      sortBy: _sortBy, // Tambahkan parameter sort
+    );
 
-      if (result['success']) {
-        setState(() => _barbers = (result['data'] as List)
-            .map((item) => BarberSearch.fromJson(item))
-            .toList());
-      }
-    } catch (e) {
+    if (result['success']) {
+      setState(() => _barbers = (result['data'] as List)
+          .map((item) => BarberSearch.fromJson(item))
+          .toList());
+    }
+  } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error searching barbers: $e')),
       );
-    } finally {
-      setState(() => _isLoadingData = false);
-    }
+     } finally {
+    setState(() => _isLoadingData = false);
   }
+}
 
   Future<void> _addTimeSlot() async {
     await showDialog(
@@ -826,6 +863,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     () {
                       setState(() {
                         _selectedIndex = 1; // Navigate to bookings tab
+                        _isScheduleTab = false;
                       });
                     },
                   ),
@@ -987,177 +1025,304 @@ class _DashboardScreenState extends State<DashboardScreen> {
         : _buildPelangganBookingsPage();
   }
 
-  Widget _buildBarberBookingsPage() {
-    final todaysSchedules = _schedules[_selectedDate] ?? [];
-    
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Jadwal & Booking',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
+Widget _buildBarberBookingsPage() {
+  final todaysSchedules = _schedules[_selectedDate] ?? [];
+  
+  return SingleChildScrollView(
+    padding: const EdgeInsets.all(16.0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Jadwal & Booking',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
               ),
-              IconButton(
-                onPressed: _loadBarberData,
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Tab selection
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(
-              children: [
-                Expanded(
+            IconButton(
+              onPressed: _loadBarberData,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        
+        const SizedBox(height: 16),
+        
+        // Tab selection
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _isScheduleTab = true;
+                    });
+                  },
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: _isScheduleTab ? Colors.white : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
+                      boxShadow: _isScheduleTab ? [
                         BoxShadow(
                           color: Colors.grey.withOpacity(0.1),
                           spreadRadius: 0,
                           blurRadius: 5,
                           offset: const Offset(0, 1),
                         ),
-                      ],
+                      ] : null,
                     ),
-                    child: const Center(
+                    child: Center(
                       child: Text(
                         'Jadwal Saya',
                         style: TextStyle(
-                          fontWeight: FontWeight.bold,
+                          fontWeight: _isScheduleTab ? FontWeight.bold : FontWeight.normal,
+                          color: _isScheduleTab ? Colors.black : Colors.grey[600],
                         ),
                       ),
                     ),
                   ),
                 ),
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      'Booking Masuk',
-                      style: TextStyle(
-                        color: Colors.grey[600],
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _isScheduleTab = false;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: !_isScheduleTab ? Colors.white : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: !_isScheduleTab ? [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          spreadRadius: 0,
+                          blurRadius: 5,
+                          offset: const Offset(0, 1),
+                        ),
+                      ] : null,
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Booking Masuk',
+                        style: TextStyle(
+                          fontWeight: !_isScheduleTab ? FontWeight.bold : FontWeight.normal,
+                          color: !_isScheduleTab ? Colors.black : Colors.grey[600],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          
-          const SizedBox(height: 24),
-          
-          // Date selector
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: PelangganService.getAvailableDates()
-                  .map((dateInfo) => _buildDateCard(
-                        dateInfo['day_short'],
-                        dateInfo['day_number'],
-                        dateInfo['date'] == _selectedDate,
-                        () {
-                          setState(() {
-                            _selectedDate = dateInfo['date'];
-                          });
-                        },
-                      ))
-                  .toList(),
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Time slots for selected date
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        ),
+        
+        const SizedBox(height: 24),
+        
+        if (_isScheduleTab) 
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Date selector with month-end dates
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _getAvailableDatesUntilMonthEnd()
+                      .map((dateInfo) => _buildDateCard(
+                            dateInfo['day_short'],
+                            dateInfo['day_number'],
+                            dateInfo['date'] == _selectedDate,
+                            () {
+                              setState(() {
+                                _selectedDate = dateInfo['date'];
+                              });
+                            },
+                          ))
+                      .toList(),
+                ),
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // Time slots for selected date
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Waktu Tersedia',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _addTimeSlot,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Tambah'),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 16),
+              
+              if (todaysSchedules.isEmpty)
+                Center(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 32),
+                      Icon(
+                        Icons.schedule,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Belum ada jadwal',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Tambahkan jadwal untuk hari ini',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: _addTimeSlot,
+                        child: const Text('Tambah Jadwal'),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: todaysSchedules.map((schedule) => 
+                    _buildTimeSlotChip(schedule)
+                  ).toList(),
+                ),
+            ],
+          )
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Waktu Tersedia',
+                'Booking Masuk',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              TextButton.icon(
-                onPressed: _addTimeSlot,
-                icon: const Icon(Icons.add),
-                label: const Text('Tambah'),
-              ),
+              
+              const SizedBox(height: 16),
+              
+              if (_bookings.isEmpty)
+                Center(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 32),
+                      Icon(
+                        Icons.calendar_today,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Belum ada booking masuk',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Booking dari pelanggan akan muncul di sini',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Column(
+                  children: _bookings.map((booking) => _buildBarberBookingCard(booking)).toList(),
+                ),
             ],
           ),
-          
-          const SizedBox(height: 16),
-          
-          if (todaysSchedules.isEmpty)
-            Center(
-              child: Column(
-                children: [
-                  const SizedBox(height: 32),
-                  Icon(
-                    Icons.schedule,
-                    size: 64,
-                    color: Colors.grey[400],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Belum ada jadwal',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Tambahkan jadwal untuk hari ini',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: _addTimeSlot,
-                    child: const Text('Tambah Jadwal'),
-                  ),
-                ],
-              ),
-            )
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: todaysSchedules.map((schedule) => 
-                _buildTimeSlotChip(schedule)
-              ).toList(),
-            ),
-        ],
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
 
-  Widget _buildPelangganBookingsPage() {
-    final activeBookings = _bookings.where((b) => b.status == 'upcoming').toList();
-    final historyBookings = _bookings.where((b) => b.status == 'completed').toList();
-    
-    return SingleChildScrollView(
+// Method helper untuk mendapatkan tanggal hingga akhir bulan
+List<Map<String, dynamic>> _getAvailableDatesUntilMonthEnd() {
+  final List<Map<String, dynamic>> dates = [];
+  final now = DateTime.now();
+  
+  // Tanggal terakhir bulan ini
+  final lastDayOfMonth = DateTime(now.year, now.month + 1, 0);
+  final daysUntilMonthEnd = lastDayOfMonth.difference(now).inDays + 1;
+  
+  for (int i = 0; i < daysUntilMonthEnd; i++) {
+    final date = now.add(Duration(days: i));
+    dates.add({
+      'date': date.toIso8601String().split('T')[0],
+      'day_short': _getDayShort(date.weekday),
+      'day_number': date.day.toString(),
+      'is_selected': i == 0, // Default hari pertama yang dipilih
+    });
+  }
+  
+  return dates;
+}
+
+// Helper method untuk mendapatkan nama hari singkat
+String _getDayShort(int weekday) {
+  const days = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+  return days[(weekday - 1) % 7]; // Handle index 0-6
+}
+
+// Implementasi widget card untuk booking yang masuk
+Widget _buildBarberBookingCard(Booking booking) {
+  return Container(
+    margin: const EdgeInsets.only(bottom: 16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.grey.withOpacity(0.1),
+          spreadRadius: 0,
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    ),
+    child: Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1165,132 +1330,412 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Booking Saya',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
+              Expanded(
+                child: Text(
+                  booking.bookingDetails.alamatLengkap ?? 'Lokasi tidak tersedia',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              IconButton(
-                onPressed: _loadPelangganData,
-                icon: const Icon(Icons.refresh),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  booking.schedule.formattedDate ?? booking.schedule.date,
+                  style: const TextStyle(
+                    color: Colors.blue,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
-          
-          const SizedBox(height: 24),
-          
-          // Tab selection
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.person, size: 16, color: Colors.grey[600]),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                    'Pelanggan: ${booking.pelangganNama}',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.schedule, size: 16, color: Colors.grey[600]),
+              const SizedBox(width: 4),
+              Text(
+                'Waktu: ${booking.schedule.time}',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.phone, size: 16, color: Colors.grey[600]),
+              const SizedBox(width: 4),
+              Text(
+                'Telepon: ${booking.bookingDetails.telepon ?? 'Tidak tersedia'}',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.attach_money, size: 16, color: Colors.grey[600]),
+              const SizedBox(width: 4),
+              Text(
+                booking.bookingDetails.formattedAmount ?? 
+                PelangganService.formatPrice(booking.bookingDetails.totalAmount),
+                style: TextStyle(
+                  color: Theme.of(context).primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          if (booking.timeUntilAppointment != null) ...[
+            const SizedBox(height: 8),
+            Row(
               children: [
-                Expanded(
+                Icon(Icons.timer, size: 16, color: Colors.grey[600]),
+                const SizedBox(width: 4),
+                Text(
+                  booking.timeUntilAppointment!,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          
+          // Buttons for actions
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () {
+                  // Implementasi untuk menghubungi pelanggan
+                  if (booking.bookingDetails.telepon != null) {
+                    // Launch phone dialer - Uncomment if you have url_launcher
+                    // import 'package:url_launcher/url_launcher.dart';
+                    // launchUrl(Uri.parse('tel:${booking.bookingDetails.telepon}'));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Menghubungi ${booking.bookingDetails.telepon}')),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Nomor telepon tidak tersedia')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.phone, size: 16),
+                label: const Text('Hubungi'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.green,
+                  side: const BorderSide(color: Colors.green),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                  minimumSize: const Size(0, 32),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () {
+                  // Show booking details in a modal
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => _BookingDetailsBottomSheet(
+                      booking: booking,
+                      onCancel: null, // Barber cannot cancel bookings
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.info_outline, size: 16),
+                label: const Text('Detail'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.blue,
+                  side: const BorderSide(color: Colors.blue),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                  minimumSize: const Size(0, 32),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+ Widget _buildPelangganBookingsPage() {
+  final activeBookings = _bookings.where((b) => b.status == 'upcoming').toList();
+  final historyBookings = _bookings.where((b) => b.status == 'completed').toList();
+  
+  return SingleChildScrollView(
+    padding: const EdgeInsets.all(16.0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Booking Saya',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            IconButton(
+              onPressed: _loadPelangganData,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        
+        const SizedBox(height: 24),
+        
+        // Tab selection
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _isActiveTab = true;
+                    });
+                  },
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: _isActiveTab ? Colors.white : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
+                      boxShadow: _isActiveTab ? [
                         BoxShadow(
                           color: Colors.grey.withOpacity(0.1),
                           spreadRadius: 0,
                           blurRadius: 5,
                           offset: const Offset(0, 1),
                         ),
-                      ],
+                      ] : null,
                     ),
                     child: Center(
                       child: Text(
                         'Aktif (${activeBookings.length})',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
+                        style: TextStyle(
+                          fontWeight: _isActiveTab ? FontWeight.bold : FontWeight.normal,
+                          color: _isActiveTab ? Colors.black : Colors.grey[600],
                         ),
                       ),
                     ),
                   ),
                 ),
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      'Riwayat (${historyBookings.length})',
-                      style: TextStyle(
-                        color: Colors.grey[600],
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _isActiveTab = false;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: !_isActiveTab ? Colors.white : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: !_isActiveTab ? [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          spreadRadius: 0,
+                          blurRadius: 5,
+                          offset: const Offset(0, 1),
+                        ),
+                      ] : null,
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Riwayat (${historyBookings.length})',
+                        style: TextStyle(
+                          fontWeight: !_isActiveTab ? FontWeight.bold : FontWeight.normal,
+                          color: !_isActiveTab ? Colors.black : Colors.grey[600],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ],
+              ),
+            ],
+          ),
+        ),
+        
+        const SizedBox(height: 24),
+        
+        // Content based on selected tab - use proper conditional widget pattern
+        _isActiveTab
+            ? _buildActiveBookingsContent(activeBookings)
+            : _buildHistoryBookingsContent(historyBookings),
+      ],
+    ),
+  );
+}
+
+// Helper method for active bookings content
+Widget _buildActiveBookingsContent(List<Booking> activeBookings) {
+  if (activeBookings.isEmpty) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(height: 32),
+          Icon(
+            Icons.calendar_today,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Belum ada booking aktif',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
             ),
           ),
-          
-          const SizedBox(height: 24),
-          
-          // Bookings list
-          if (activeBookings.isEmpty)
-            Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(height: 32),
-                  Icon(
-                    Icons.calendar_today,
-                    size: 64,
-                    color: Colors.grey[400],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Belum ada booking aktif',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Anda belum memiliki booking yang aktif saat ini',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        _selectedIndex = 0; // Go to home to book
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'Cari Barber',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            Column(
-              children: activeBookings.map((booking) => _buildBookingCard(booking)).toList(),
+          const SizedBox(height: 8),
+          Text(
+            'Anda belum memiliki booking yang aktif saat ini',
+            style: TextStyle(
+              color: Colors.grey[600],
             ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _selectedIndex = 0; // Go to home to book
+              });
+            },
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'Cari Barber',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         ],
       ),
     );
+  } else {
+    return Column(
+      children: activeBookings.map((booking) => _buildBookingCard(booking)).toList(),
+    );
   }
+}
+
+// Helper method for history bookings content
+Widget _buildHistoryBookingsContent(List<Booking> historyBookings) {
+  if (historyBookings.isEmpty) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(height: 32),
+          Icon(
+            Icons.history,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Belum ada riwayat booking',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Booking yang telah selesai akan muncul di sini',
+            style: TextStyle(
+              color: Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          OutlinedButton(
+            onPressed: () {
+              setState(() {
+                _selectedIndex = 0; // Go to home to book new
+              });
+            },
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'Cari Barber Baru',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  } else {
+    return Column(
+      children: historyBookings.map((booking) => _buildBookingCard(booking)).toList(),
+    );
+  }
+}
 
   Widget _buildProfilePage() {
     return SingleChildScrollView(
@@ -1843,24 +2288,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildFilterChip(String label, bool isSelected) {
+  String sortValue = 'nama'; // default
+
+ // Map label ke nilai sortBy yang sesuai dengan API
+  if (label == 'Rating Tertinggi') {
+    sortValue = 'rating_desc';
+  } else if (label == 'Harga Terendah') {
+    sortValue = 'harga_asc';
+  } else if (label == 'Terdekat') {
+    sortValue = 'distance'; // Anda perlu menambahkan ini di API
+  } else {
+    sortValue = 'nama'; // Default untuk "Semua"
+  }
+
     return Container(
-      margin: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(label),
-        selected: isSelected,
-        onSelected: (bool selected) {
-          // Handle filter selection
+    margin: const EdgeInsets.only(right: 8),
+    child: FilterChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (bool selected) {
+        if (selected) {
           setState(() {
             _selectedFilter = label;
+            _sortBy = sortValue;
           });
-        },
-        backgroundColor: Colors.white,
-        selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
-        checkmarkColor: Theme.of(context).primaryColor,
-        labelStyle: TextStyle(
-          color: isSelected ? Theme.of(context).primaryColor : Colors.grey[800],
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-        ),
+          
+          // Reload barbers dengan filter baru
+          _searchBarbers(_searchQuery);
+        }
+      },
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
