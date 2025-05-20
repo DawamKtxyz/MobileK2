@@ -199,4 +199,51 @@ Future<bool> register(Map<String, dynamic> data) async {
       throw Exception('Failed to get profile: $e');
     }
   }
+  // Add these methods to barber_auth_service.dart
+
+  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        throw Exception('No token found for updating profile');
+      }
+
+      final url = _getUrl('barber/update-profile');
+      print('Updating barber profile at: $url');
+
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: json.encode(data),
+      );
+
+      print('Update Profile Response Status: ${response.statusCode}');
+      print('Update Profile Response Body: ${response.body}');
+
+      final responseBody = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        if (responseBody['success'] == true) {
+          // Update local storage with new barber data
+          await prefs.setString('barber', json.encode(responseBody['barber']));
+          print('Profile updated successfully!');
+          return responseBody;
+        } else {
+          throw Exception(responseBody['message'] ?? 'Unknown error');
+        }
+      } else {
+        throw Exception(responseBody['message'] ?? 'Update failed with status ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Update profile exception: $e');
+      throw Exception('Update profile failed: $e');
+    }
+  }
 }
