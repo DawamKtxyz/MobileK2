@@ -2,40 +2,35 @@ class Barber {
   final int id;
   final String nama;
   final String email;
-  final String telepon;
+  final String? telepon;
   final String? spesialisasi;
-  final double persentaseKomisi;
-  final String sertifikat;
-  final double harga; // Added harga field
+  final double harga;
+  final String? sertifikat;
+  final String? profilePhoto; // Add this field
 
   Barber({
     required this.id,
     required this.nama,
     required this.email,
-    required this.telepon,
+    this.telepon,
     this.spesialisasi,
-    required this.persentaseKomisi,
-    required this.sertifikat,
-    required this.harga, // Added to constructor
+    required this.harga,
+    this.sertifikat,
+    this.profilePhoto, // Initialize it
   });
 
- factory Barber.fromJson(Map<String, dynamic> json) {
-  // Pastikan semua field memiliki nilai default yang aman jika null
-  return Barber(
-    id: json['id'] ?? 0,
-    nama: json['nama'] ?? '',
-    email: json['email'] ?? '',
-    telepon: json['telepon'] ?? '',
-    spesialisasi: json['spesialisasi'],
-    persentaseKomisi: json['persentase_komisi'] != null
-        ? double.tryParse(json['persentase_komisi'].toString()) ?? 0.0
-        : 0.0,
-    sertifikat: json['sertifikat'] ?? '',
-    harga: json['harga'] != null
-        ? double.tryParse(json['harga'].toString()) ?? 20000.0
-        : 20000.0,
-  );
-}
+  factory Barber.fromJson(Map<String, dynamic> json) {
+    return Barber(
+      id: json['id'],
+      nama: json['nama'],
+      email: json['email'],
+      telepon: json['telepon'],
+      spesialisasi: json['spesialisasi'],
+      harga: json['harga'] is String ? double.parse(json['harga']) : json['harga'].toDouble(),
+      sertifikat: json['sertifikat'],
+      profilePhoto: json['profile_photo'], // Parse from JSON
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -44,9 +39,9 @@ class Barber {
       'email': email,
       'telepon': telepon,
       'spesialisasi': spesialisasi,
-      'persentase_komisi': persentaseKomisi,
+      'harga': harga,
       'sertifikat': sertifikat,
-      'harga': harga, // Added to JSON serialization
+      'profile_photo': profilePhoto, // Include in JSON
     };
   }
 }

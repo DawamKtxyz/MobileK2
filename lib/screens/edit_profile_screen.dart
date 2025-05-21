@@ -1,7 +1,10 @@
 // lib/screens/edit_profile_screen.dart
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/barber_model.dart';
 import '../models/pelanggan_model.dart';
@@ -44,6 +47,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _isObscurePassword = true;
   bool _isObscureConfirmPassword = true;
   DateTime? _selectedDate;
+
+  // Image picker variables
+  File? _selectedImage;
+  final ImagePicker _picker = ImagePicker();
+  String? _webImageData; // For storing image data in web
 
   @override
   void initState() {
@@ -91,6 +99,134 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _pickImage() async {
+    try {
+      if (kIsWeb) {
+        // Implementation for web
+        final XFile? pickedFile = await _picker.pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 800,
+          maxHeight: 800,
+          imageQuality: 85,
+        );
+
+        if (pickedFile != null) {
+          // For web, read as bytes and store as base64
+          final bytes = await pickedFile.readAsBytes();
+          setState(() {
+            _webImageData = base64Encode(bytes);
+            _selectedImage = null; // Reset selectedImage for mobile
+          });
+        }
+      } else {
+        // Implementation for mobile
+        final XFile? pickedFile = await _picker.pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 800,
+          maxHeight: 800,
+          imageQuality: 85,
+        );
+
+        if (pickedFile != null) {
+          setState(() {
+            _selectedImage = File(pickedFile.path);
+            _webImageData = null; // Reset webImageData for web
+          });
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking image: $e')),
+      );
+    }
+  }
+
+  Future<String?> _uploadProfileImage() async {
+    try {
+      // Fix the URL being used
+      String baseUrl = Constants.baseUrl;
+      if (baseUrl.endsWith('/api')) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+      }
+      
+      final url = widget.userType == UserType.barber
+          ? '$baseUrl/api/barber/upload-profile-photo'
+          : '$baseUrl/api/pelanggan/upload-profile-photo';
+      
+      final prefs = await SharedPreferences.getInstance();
+      final token = widget.userType == UserType.barber 
+          ? prefs.getString(Constants.keyBarberToken)
+          : prefs.getString(Constants.keyPelangganToken);
+      
+      if (token == null) {
+        throw Exception('Token tidak ditemukan');
+      }
+
+      if (kIsWeb) {
+        // For web: send as JSON with base64
+        if (_webImageData == null) return null;
+        
+        final response = await http.post(
+          Uri.parse(url),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: json.encode({
+            'profile_photo': _webImageData,
+            'file_name': 'profile_image.jpg',
+          }),
+        );
+        
+        final responseBody = json.decode(response.body);
+        
+        if (response.statusCode == 200 && responseBody['success'] == true) {
+          return responseBody['image_path'];
+        } else {
+          throw Exception(responseBody['message'] ?? 'Failed to upload image');
+        }
+      } else {
+        // For mobile: send as multipart/form-data
+        if (_selectedImage == null) return null;
+        
+        var request = http.MultipartRequest('POST', Uri.parse(url));
+        
+        // Add headers
+        request.headers.addAll({
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+          'X-Requested-With': 'XMLHttpRequest',
+        });
+        
+        // Add file
+        request.files.add(await http.MultipartFile.fromPath(
+          'profile_photo',
+          _selectedImage!.path,
+        ));
+        
+        // Send request
+        var streamedResponse = await request.send();
+        var response = await http.Response.fromStream(streamedResponse);
+        
+        final responseBody = json.decode(response.body);
+        
+        if (response.statusCode == 200 && responseBody['success'] == true) {
+          return responseBody['image_path'];
+        } else {
+          throw Exception(responseBody['message'] ?? 'Failed to upload image');
+        }
+      }
+    } catch (e) {
+      print('Error uploading image: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error uploading image: $e')),
+      );
+      return null;
+    }
+  }
+
   Future<void> _updateProfile() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -117,6 +253,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       // Add password if provided
       if (_passwordController.text.isNotEmpty) {
         updateData['password'] = _passwordController.text;
+      }
+
+      // Upload image if selected
+      String? profilePhotoPath;
+      if (_selectedImage != null || _webImageData != null) {
+        profilePhotoPath = await _uploadProfileImage();
+        if (profilePhotoPath != null) {
+          updateData['profile_photo'] = profilePhotoPath;
+        }
       }
 
       bool success = false;
@@ -184,8 +329,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       throw Exception('Token tidak ditemukan');
     }
 
+    // Fix URL base path
+    String baseUrl = Constants.baseUrl;
+    if (baseUrl.endsWith('/api')) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+    }
+
     // Call API directly using http
-    final url = '${Constants.baseUrl}/pelanggan/profile/update';
+    final url = '$baseUrl/api/pelanggan/profile/update';
     final response = await http.post(
       Uri.parse(url),
       headers: {
@@ -207,82 +358,111 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<Map<String, dynamic>> _updateBarberProfile(Map<String, dynamic> data) async {
-  final prefs = await SharedPreferences.getInstance();
-  final token = prefs.getString(Constants.keyBarberToken);
-  
-  if (token == null) {
-    throw Exception('Token tidak ditemukan');
-  }
-
-  // Pastikan harga dalam format yang benar
-  if (data.containsKey('harga')) {
-    // Log untuk debugging
-    print('Sending harga to API: ${data['harga']}');
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(Constants.keyBarberToken);
     
-    // Pastikan harga adalah integer yang valid
-    if (data['harga'] is String) {
-      data['harga'] = int.tryParse(data['harga']) ?? widget.userData.harga.toInt();
+    if (token == null) {
+      throw Exception('Token tidak ditemukan');
     }
-  }
 
-  // Call API
-  final url = '${Constants.baseUrl}/barber/update-profile';
-  final response = await http.post(
-    Uri.parse(url),
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': 'Bearer $token',
-      'X-Requested-With': 'XMLHttpRequest',
-    },
-    body: json.encode(data),
-  );
+    // Fix URL base path
+    String baseUrl = Constants.baseUrl;
+    if (baseUrl.endsWith('/api')) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+    }
 
-  final responseBody = json.decode(response.body);
-  print('Profile update response: $responseBody'); // Debug log
-
-  if (response.statusCode == 200 && responseBody['success'] == true) {
-    // Pastikan barber data lengkap
-    if (responseBody['barber'] != null) {
-      // Pastikan harga tersedia di respons
-      var barberData = responseBody['barber'];
-      if (barberData['harga'] == null) {
-        barberData['harga'] = data['harga'] ?? widget.userData.harga;
+    // Pastikan harga dalam format yang benar
+    if (data.containsKey('harga')) {
+      // Log untuk debugging
+      print('Sending harga to API: ${data['harga']}');
+      
+      // Pastikan harga adalah integer yang valid
+      if (data['harga'] is String) {
+        data['harga'] = int.tryParse(data['harga']) ?? widget.userData.harga.toInt();
       }
-      responseBody['barber'] = barberData;
     }
+
+    // Call API
+    final url = '$baseUrl/api/barber/update-profile';
+    print('Using URL: $url'); // Debug - check the actual URL
     
-    return responseBody;
-  } else {
-    throw Exception(responseBody['message'] ?? 'Gagal memperbarui profil');
+    final response = await http.post(
+      Uri.parse(url),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: json.encode(data),
+    );
+
+    final responseBody = json.decode(response.body);
+    print('Profile update response: $responseBody'); // Debug log
+
+    if (response.statusCode == 200 && responseBody['success'] == true) {
+      // Pastikan barber data lengkap
+      if (responseBody['barber'] != null) {
+        // Pastikan harga tersedia di respons
+        var barberData = responseBody['barber'];
+        if (barberData['harga'] == null) {
+          barberData['harga'] = data['harga'] ?? widget.userData.harga;
+        }
+        responseBody['barber'] = barberData;
+      }
+      
+      return responseBody;
+    } else {
+      throw Exception(responseBody['message'] ?? 'Gagal memperbarui profil');
+    }
   }
-}
 
   Future<void> _updateLocalStorage(Map<String, dynamic> result) async {
-  final prefs = await SharedPreferences.getInstance();
-    
+    final prefs = await SharedPreferences.getInstance();
+      
     // Debug output untuk melihat data yang diterima
-  print('Result data for storage update: $result');
-  
-  if (widget.userType == UserType.pelanggan && result['pelanggan'] != null) {
-    // Update 'pelanggan' key dengan data lengkap
-    await prefs.setString('pelanggan', jsonEncode(result['pelanggan']));
-  } else if (widget.userType == UserType.barber && result['barber'] != null) {
-    // Pastikan semua field yang diperlukan ada di data barber
-    var barberData = result['barber'];
+    print('Result data for storage update: $result');
     
-    // Pastikan field harga tersedia dan diparse dengan benar
-    if (barberData['harga'] == null) {
-      // Gunakan harga dari form jika tidak ada dari server
-      barberData['harga'] = double.tryParse(_hargaController.text) ?? widget.userData.harga;
+    if (widget.userType == UserType.pelanggan && result['pelanggan'] != null) {
+      // Update 'pelanggan' key dengan data lengkap
+      await prefs.setString('pelanggan', jsonEncode(result['pelanggan']));
+    } else if (widget.userType == UserType.barber && result['barber'] != null) {
+      // Pastikan semua field yang diperlukan ada di data barber
+      var barberData = result['barber'];
+      
+      // Pastikan field harga tersedia dan diparse dengan benar
+      if (barberData['harga'] == null) {
+        // Gunakan harga dari form jika tidak ada dari server
+        barberData['harga'] = double.tryParse(_hargaController.text) ?? widget.userData.harga;
+      }
+      
+      await prefs.setString('barber', jsonEncode(barberData));
+      
+      // Debug output
+      print('Updated barber data in storage: $barberData');
     }
-    
-    await prefs.setString('barber', jsonEncode(barberData));
-    
-    // Debug output
-    print('Updated barber data in storage: $barberData');
   }
-}
+
+  // Helper method to determine which profile image to display
+  ImageProvider? _getProfileImage() {
+    if (_selectedImage != null) {
+      return FileImage(_selectedImage!);
+    } else if (_webImageData != null) {
+      return MemoryImage(base64Decode(_webImageData!));
+    } else if (widget.userData.profilePhoto != null) {
+      // Use the image URL from the server
+      String baseUrl = Constants.baseUrl;
+      if (baseUrl.endsWith('/api')) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+      }
+      return NetworkImage('$baseUrl/storage/${widget.userData.profilePhoto}');
+    }
+    return null;
+  }
+
+  bool _shouldShowDefaultIcon() {
+    return _selectedImage == null && _webImageData == null && widget.userData.profilePhoto == null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -333,27 +513,33 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         CircleAvatar(
                           radius: 60,
                           backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                          child: Icon(
-                            widget.userType == UserType.barber 
-                                ? Icons.content_cut 
-                                : Icons.person,
-                            size: 60,
-                            color: Theme.of(context).primaryColor,
-                          ),
+                          backgroundImage: _getProfileImage(),
+                          child: _shouldShowDefaultIcon()
+                              ? Icon(
+                                  widget.userType == UserType.barber 
+                                      ? Icons.content_cut 
+                                      : Icons.person,
+                                  size: 60,
+                                  color: Theme.of(context).primaryColor,
+                                ) 
+                              : null,
                         ),
                         Positioned(
                           bottom: 0,
                           right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).primaryColor,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.camera_alt,
-                              color: Colors.white,
-                              size: 20,
+                          child: InkWell(
+                            onTap: _pickImage,
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).primaryColor,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.camera_alt,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                             ),
                           ),
                         ),
@@ -705,65 +891,65 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
       keyboardType: keyboardType,
       obscureText: obscureText,
-      maxLines: maxLines,
-      enabled: enabled,
-      validator: validator,
-      onChanged: (value) {
-        // Update confirm password field state
-        if (label == 'Password Baru') {
-          setState(() {});
-        }
-        
-        // Format for barber price field - only keep numeric values
-        if (label == 'Harga Layanan' && value.isNotEmpty) {
-          // Remove any non-numeric characters
-          String numericValue = value.replaceAll(RegExp(r'[^\d]'), '');
-          if (numericValue != value) {
-            controller.value = TextEditingValue(
-              text: numericValue,
-              selection: TextSelection.collapsed(offset: numericValue.length),
-            );
-          }
-        }
-      },
-    );
-  }
+     maxLines: maxLines,
+     enabled: enabled,
+     validator: validator,
+     onChanged: (value) {
+       // Update confirm password field state
+       if (label == 'Password Baru') {
+         setState(() {});
+       }
+       
+       // Format for barber price field - only keep numeric values
+       if (label == 'Harga Layanan' && value.isNotEmpty) {
+         // Remove any non-numeric characters
+         String numericValue = value.replaceAll(RegExp(r'[^\d]'), '');
+         if (numericValue != value) {
+           controller.value = TextEditingValue(
+             text: numericValue,
+             selection: TextSelection.collapsed(offset: numericValue.length),
+           );
+         }
+       }
+     },
+   );
+ }
 
-  Widget _buildDateField() {
-    return TextFormField(
-      controller: _tanggalLahirController,
-      decoration: InputDecoration(
-        labelText: 'Tanggal Lahir',
-        prefixIcon: const Icon(Icons.calendar_today_outlined),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[300]!),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Theme.of(context).primaryColor),
-        ),
-        filled: true,
-        fillColor: Colors.grey[50],
-      ),
-      readOnly: true,
-      onTap: _selectDate,
-    );
-  }
+ Widget _buildDateField() {
+   return TextFormField(
+     controller: _tanggalLahirController,
+     decoration: InputDecoration(
+       labelText: 'Tanggal Lahir',
+       prefixIcon: const Icon(Icons.calendar_today_outlined),
+       border: OutlineInputBorder(
+         borderRadius: BorderRadius.circular(12),
+       ),
+       enabledBorder: OutlineInputBorder(
+         borderRadius: BorderRadius.circular(12),
+         borderSide: BorderSide(color: Colors.grey[300]!),
+       ),
+       focusedBorder: OutlineInputBorder(
+         borderRadius: BorderRadius.circular(12),
+         borderSide: BorderSide(color: Theme.of(context).primaryColor),
+       ),
+       filled: true,
+       fillColor: Colors.grey[50],
+     ),
+     readOnly: true,
+     onTap: _selectDate,
+   );
+ }
 
-  @override
-  void dispose() {
-    _namaController.dispose();
-    _teleponController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    _alamatController.dispose();
-    _tanggalLahirController.dispose();
-    _spesialisasiController.dispose();
-    _hargaController.dispose();
-    super.dispose();
-  }
+ @override
+ void dispose() {
+   _namaController.dispose();
+   _teleponController.dispose();
+   _passwordController.dispose();
+   _confirmPasswordController.dispose();
+   _alamatController.dispose();
+   _tanggalLahirController.dispose();
+   _spesialisasiController.dispose();
+   _hargaController.dispose();
+   super.dispose();
+ }
 }

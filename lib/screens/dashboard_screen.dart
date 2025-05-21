@@ -27,7 +27,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _sortBy = 'nama';
   bool _isDarkMode = false;
   bool _isScheduleTab = true;
-
+  bool _isActiveBookingTab = true;
+  
   // Method untuk toggle dark mode
 void _toggleDarkMode() {
   setState(() {
@@ -303,6 +304,35 @@ Future<void> _loadDarkModePreference() async {
       ),
     );
   }
+
+Future<void> _addBulkTimeSlots() async {
+  await showDialog(
+    context: context,
+    builder: (context) => _BulkAddTimeSlotsDialog(
+      onAddSlots: (slots) async {
+        try {
+          if (slots.isEmpty) return;
+          
+          // Use the bulkAddTimeSlots method from BarberService
+          final result = await _barberService.bulkAddTimeSlots(slots);
+
+          if (result['success']) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result['message'] ?? 'Jadwal berhasil ditambahkan')),
+            );
+            await _loadBarberData(); // Refresh data
+          } else {
+            throw Exception(result['message']);
+          }
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error adding time slots: $e')),
+          );
+        }
+      },
+    ),
+  );
+}
 
   Future<void> _deleteTimeSlot(Schedule schedule) async {
     final confirmed = await showDialog<bool>(
@@ -833,75 +863,55 @@ Future<void> _loadDarkModePreference() async {
         const SizedBox(height: 24),
         
         // Quick access
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Akses Cepat',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildQuickAccessCard(
-                    'Tambah Jadwal',
-                    Icons.add_circle_outline,
-                    Colors.green,
-                    _addTimeSlot,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildQuickAccessCard(
-                    'Lihat Booking',
-                    Icons.calendar_today,
-                    Colors.blue,
-                    () {
-                      setState(() {
-                        _selectedIndex = 1; // Navigate to bookings tab
-                        _isScheduleTab = false;
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildQuickAccessCard(
-                    'Kelola Jadwal',
-                    Icons.schedule,
-                    Colors.purple,
-                    () {
-                      setState(() {
-                        _selectedIndex = 1; // Navigate to bookings tab
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildQuickAccessCard(
-                    'Edit Profil',
-                    Icons.person,
-                    Colors.orange,
-                    () {
-                      setState(() {
-                        _selectedIndex = 2; // Navigate to profile tab
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
+        // Alternative layout with 3 buttons
+Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+    const Text(
+      'Akses Cepat',
+      style: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+    const SizedBox(height: 12),
+    Row(
+      children: [
+        Expanded(
+          child: _buildQuickAccessCard(
+            'Tambah Jadwal',
+            Icons.add_circle_outline,
+            Colors.green,
+            _addTimeSlot,
+          ),
         ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildQuickAccessCard(
+            'Jadwal Cepat',  // New card for bulk scheduling
+            Icons.calendar_month,
+            Colors.teal,
+            _addBulkTimeSlots,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildQuickAccessCard(
+            'Lihat Booking',
+            Icons.calendar_today,
+            Colors.blue,
+            () {
+              setState(() {
+                _selectedIndex = 1; // Navigate to bookings tab
+                _isScheduleTab = false;
+              });
+            },
+          ),
+        ),
+      ],
+    ),
+  ],
+),
       ],
     );
   }
@@ -1223,58 +1233,143 @@ Widget _buildBarberBookingsPage() {
                 ),
             ],
           )
-        else
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Booking Masuk',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+       else
+  Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // Tab for booking status
+      Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isActiveBookingTab = true;
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: _isActiveBookingTab ? Colors.white : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: _isActiveBookingTab ? [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        spreadRadius: 0,
+                        blurRadius: 5,
+                        offset: const Offset(0, 1),
+                      ),
+                    ] : null,
+                  ),
+                  child: Center(
+                    child: Text(
+                      'Sedang Berlangsung',
+                      style: TextStyle(
+                        fontWeight: _isActiveBookingTab ? FontWeight.bold : FontWeight.normal,
+                        color: _isActiveBookingTab ? Colors.black : Colors.grey[600],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              
-              const SizedBox(height: 16),
-              
-              if (_bookings.isEmpty)
-                Center(
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 32),
-                      Icon(
-                        Icons.calendar_today,
-                        size: 64,
-                        color: Colors.grey[400],
+            ),
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isActiveBookingTab = false;
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: !_isActiveBookingTab ? Colors.white : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: !_isActiveBookingTab ? [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        spreadRadius: 0,
+                        blurRadius: 5,
+                        offset: const Offset(0, 1),
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Belum ada booking masuk',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Booking dari pelanggan akan muncul di sini',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                    ] : null,
                   ),
-                )
-              else
-                Column(
-                  children: _bookings.map((booking) => _buildBarberBookingCard(booking)).toList(),
+                  child: Center(
+                    child: Text(
+                      'Selesai',
+                      style: TextStyle(
+                        fontWeight: !_isActiveBookingTab ? FontWeight.bold : FontWeight.normal,
+                        color: !_isActiveBookingTab ? Colors.black : Colors.grey[600],
+                      ),
+                    ),
+                  ),
                 ),
-            ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      
+      const SizedBox(height: 16),
+      
+      // Filtered bookings
+      _buildFilteredBarberBookings(_isActiveBookingTab ? 'upcoming' : 'completed'),
+    ],
+  ),
+  ]
+  )
+  );
+  
+}
+
+// Tambahkan helper method ini setelah _buildBarberBookingsPage()
+Widget _buildFilteredBarberBookings(String status) {
+  final filteredBookings = _bookings.where((booking) => booking.status == status).toList();
+  
+  if (filteredBookings.isEmpty) {
+    return Center(
+      child: Column(
+        children: [
+          const SizedBox(height: 32),
+          Icon(
+            status == 'upcoming' ? Icons.calendar_today : Icons.history,
+            size: 64,
+            color: Colors.grey[400],
           ),
-      ],
-    ),
+          const SizedBox(height: 16),
+          Text(
+            status == 'upcoming' 
+                ? 'Belum ada booking mendatang' 
+                : 'Belum ada booking selesai',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            status == 'upcoming'
+                ? 'Booking baru akan muncul di sini'
+                : 'Riwayat booking selesai akan muncul di sini',
+            style: TextStyle(
+              color: Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+  
+  return Column(
+    children: filteredBookings.map((booking) => _buildBarberBookingCard(booking)).toList(),
   );
 }
 
@@ -3561,5 +3656,316 @@ class _BookingDetailsBottomSheet extends StatelessWidget {
       default:
         return Colors.grey;
     }
+  }
+}
+
+// Tambahkan kelas ini di bagian paling bawah file, setelah semua kelas widget lainnya
+class _BulkAddTimeSlotsDialog extends StatefulWidget {
+  final Function(List<Map<String, String>>) onAddSlots;
+
+  const _BulkAddTimeSlotsDialog({required this.onAddSlots});
+
+  @override
+  State<_BulkAddTimeSlotsDialog> createState() => __BulkAddTimeSlotsDialogState();
+}
+
+class __BulkAddTimeSlotsDialogState extends State<_BulkAddTimeSlotsDialog> {
+  DateTime _startDate = DateTime.now();
+  DateTime _endDate = DateTime.now().add(const Duration(days: 7));
+  final List<TimeOfDay> _selectedTimes = [];
+  final List<int> _selectedDays = [1, 2, 3, 4, 5]; // Monday to Friday by default
+  
+  final List<String> _daysOfWeek = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+  
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Jadwal Cepat'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Start date picker
+            ListTile(
+              leading: const Icon(Icons.calendar_today),
+              title: const Text('Tanggal Mulai'),
+              subtitle: Text(
+                '${_startDate.day}/${_startDate.month}/${_startDate.year}',
+              ),
+              onTap: () async {
+                final date = await showDatePicker(
+                  context: context,
+                  initialDate: _startDate,
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime.now().add(const Duration(days: 30)),
+                );
+                if (date != null) {
+                  setState(() {
+                    _startDate = date;
+                    // Ensure end date is not before start date
+                    if (_endDate.isBefore(_startDate)) {
+                      _endDate = _startDate.add(const Duration(days: 7));
+                    }
+                  });
+                }
+              },
+            ),
+            
+            // End date picker
+            ListTile(
+              leading: const Icon(Icons.calendar_today),
+              title: const Text('Tanggal Akhir'),
+              subtitle: Text(
+                '${_endDate.day}/${_endDate.month}/${_endDate.year}',
+              ),
+              onTap: () async {
+                final date = await showDatePicker(
+                  context: context,
+                  initialDate: _endDate,
+                  firstDate: _startDate,
+                  lastDate: _startDate.add(const Duration(days: 30)),
+                );
+                if (date != null) {
+                  setState(() => _endDate = date);
+                }
+              },
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Days of week selection
+            const Text(
+              'Pilih Hari',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: List.generate(7, (index) {
+                final dayNumber = index + 1; // 1=Monday, 7=Sunday
+                final isSelected = _selectedDays.contains(dayNumber);
+                
+                return FilterChip(
+                  label: Text(_daysOfWeek[index]),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        _selectedDays.add(dayNumber);
+                      } else {
+                        _selectedDays.remove(dayNumber);
+                      }
+                    });
+                  },
+                );
+              }),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Time slots section
+            const Text(
+              'Pilih Waktu',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            
+            // Quick times buttons
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildQuickTimeButton('08:00'),
+                _buildQuickTimeButton('09:00'),
+                _buildQuickTimeButton('10:00'),
+                _buildQuickTimeButton('11:00'),
+                _buildQuickTimeButton('13:00'),
+                _buildQuickTimeButton('14:00'),
+                _buildQuickTimeButton('15:00'),
+                _buildQuickTimeButton('16:00'),
+                _buildQuickTimeButton('17:00'),
+                _buildQuickTimeButton('18:00'),
+                _buildQuickTimeButton('19:00'),
+                ElevatedButton.icon(
+                  onPressed: _addCustomTime,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Tambah'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                ),
+              ],
+            ),
+            
+            if (_selectedTimes.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Waktu dipilih:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _selectedTimes.map((time) {
+                  return Chip(
+                    label: Text('${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}'),
+                    deleteIcon: const Icon(Icons.close, size: 16),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedTimes.remove(time);
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+            
+            const SizedBox(height: 16),
+            
+            // Preview section
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Preview:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Dari ${_startDate.day}/${_startDate.month} sampai ${_endDate.day}/${_endDate.month}',
+                  ),
+                  Text(
+                    'Hari: ${_selectedDays.map((d) => _daysOfWeek[d-1]).join(', ')}',
+                  ),
+                  Text(
+                    'Waktu: ${_selectedTimes.map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}').join(', ')}',
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Total ${_calculateTotalSlots()} slot waktu',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.pop(context),
+          child: const Text('Batal'),
+        ),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _generateAndAddSlots,
+          child: _isLoading 
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Tambah Jadwal'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuickTimeButton(String time) {
+    final parts = time.split(':');
+    final hour = int.parse(parts[0]);
+    final minute = parts.length > 1 ? int.parse(parts[1]) : 0;
+    final timeOfDay = TimeOfDay(hour: hour, minute: minute);
+    
+    final isSelected = _selectedTimes.any((t) => t.hour == hour && t.minute == minute);
+    
+    return FilterChip(
+      label: Text(time),
+      selected: isSelected,
+      onSelected: (selected) {
+        setState(() {
+          if (selected) {
+            _selectedTimes.add(timeOfDay);
+          } else {
+            _selectedTimes.removeWhere((t) => t.hour == hour && t.minute == minute);
+          }
+        });
+      },
+    );
+  }
+
+  Future<void> _addCustomTime() async {
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+    
+    if (time != null) {
+      setState(() {
+        // Check if time already exists
+        if (!_selectedTimes.any((t) => t.hour == time.hour && t.minute == time.minute)) {
+          _selectedTimes.add(time);
+        }
+      });
+    }
+  }
+
+  int _calculateTotalSlots() {
+    if (_selectedTimes.isEmpty || _selectedDays.isEmpty) return 0;
+    
+    final totalDays = _endDate.difference(_startDate).inDays + 1;
+    int totalSlots = 0;
+    
+    for (int i = 0; i < totalDays; i++) {
+      final date = _startDate.add(Duration(days: i));
+      if (_selectedDays.contains(date.weekday)) {
+        totalSlots += _selectedTimes.length;
+      }
+    }
+    
+    return totalSlots;
+  }
+
+  void _generateAndAddSlots() {
+    if (_selectedTimes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih minimal satu waktu')),
+      );
+      return;
+    }
+    
+    if (_selectedDays.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih minimal satu hari')),
+      );
+      return;
+    }
+    
+    final List<Map<String, String>> slots = [];
+    
+    final totalDays = _endDate.difference(_startDate).inDays + 1;
+    
+    for (int i = 0; i < totalDays; i++) {
+      final date = _startDate.add(Duration(days: i));
+      
+      if (_selectedDays.contains(date.weekday)) {
+        for (final time in _selectedTimes) {
+          slots.add({
+            'tanggal': date.toIso8601String().split('T')[0],
+            'jam': '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+          });
+        }
+      }
+    }
+    
+    Navigator.pop(context);
+    widget.onAddSlots(slots);
   }
 }
