@@ -3,7 +3,17 @@ class Constants {
   // static const String baseUrl = 'http://192.168.1.8:8000/api';
   // static const String baseUrl = 'http://10.0.2.2:8000/api';
   static const String baseUrl = 'http://localhost:8000/api';
- // Headers untuk request
+  static const String storageUrl = 'http://localhost:8000/storage';
+  // Atau jika menggunakan emulator Android:
+  // static const String baseUrl = 'http://10.0.2.2:8000/api';
+  // static const String storageUrl = 'http://10.0.2.2:8000/storage';
+
+ static String buildStorageUrl(String path) {
+    if (path.startsWith('http')) return path;
+    return '$storageUrl/$path';
+  }
+
+  // Headers untuk request
   static const Map<String, String> headers = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',

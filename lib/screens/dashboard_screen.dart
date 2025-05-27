@@ -1,5 +1,10 @@
+import 'package:barbergo_flutter/screens/direct_chat_screen.dart';
+import 'package:barbergo_flutter/utils/constants.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/barber_model.dart';
 import '../models/pelanggan_model.dart';
@@ -9,6 +14,11 @@ import '../services/barber_service.dart';
 import '../services/pelanggan_service.dart';
 import 'login_screen.dart';
 import 'edit_profile_screen.dart';
+import '../screens/chat_list_screen.dart';
+import '../screens/payment_screen.dart';
+import '../models/chat_model.dart';
+import '../screens/direct_chat_screen.dart';
+
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -28,7 +38,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isDarkMode = false;
   bool _isScheduleTab = true;
   bool _isActiveBookingTab = true;
+  bool _isSelectionMode = false;
+Set<int> _selectedScheduleIds = {};
+
   
+String? _getProfilePhotoUrl(String? photoPath) {
+  if (photoPath == null || photoPath.isEmpty) return null;
+  
+  // Jika sudah berupa URL lengkap, gunakan langsung
+  if (photoPath.startsWith('http')) {
+    return photoPath;
+  }
+  
+  // Buat URL dengan IP yang BENAR (sesuai dengan yang working)
+  // Ganti dari Constants.storageUrl ke hardcoded yang sudah working
+  final fullUrl = 'http://192.168.1.11:8000/storage/$photoPath';
+  print('Profile photo URL: $fullUrl');
+  
+  return fullUrl;
+}
+
+
   // Method untuk toggle dark mode
 void _toggleDarkMode() {
   setState(() {
@@ -67,6 +97,7 @@ Future<void> _loadDarkModePreference() async {
   Map<String, List<Schedule>> _schedules = {};
   Map<String, dynamic>? _stats;
   
+  
   // UI State
   bool _isLoadingData = false;
   String _searchQuery = '';
@@ -78,7 +109,11 @@ Future<void> _loadDarkModePreference() async {
     super.initState();
     _loadUserData();
     _loadDarkModePreference();
+  // Debug network connectivity
+  if (kDebugMode) {
+    _testNetworkConnectivity();
   }
+}
 
   Future<void> _loadUserData() async {
     setState(() => _isLoading = true);
@@ -297,7 +332,7 @@ Future<void> _loadDarkModePreference() async {
             }
           } catch (e) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Error adding time slot: $e')),
+              SnackBar(content: Text('Gagal menambahkan jadwal: $e')),
             );
           }
         },
@@ -305,28 +340,80 @@ Future<void> _loadDarkModePreference() async {
     );
   }
 
+// Updated _addBulkTimeSlots method - place this in your main widget class
 Future<void> _addBulkTimeSlots() async {
   await showDialog(
     context: context,
+    barrierDismissible: false, // Prevent dismissing dialog accidentally
     builder: (context) => _BulkAddTimeSlotsDialog(
       onAddSlots: (slots) async {
         try {
-          if (slots.isEmpty) return;
+          if (slots.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Tidak ada jadwal yang ditambahkan')),
+            );
+            return;
+          }
+          
+          // Show loading indicator
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 16),
+                  Text('Menambahkan jadwal...'),
+                ],
+              ),
+              duration: Duration(seconds: 30), // Long duration for processing
+            ),
+          );
           
           // Use the bulkAddTimeSlots method from BarberService
           final result = await _barberService.bulkAddTimeSlots(slots);
 
+          // Hide loading snackbar
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
           if (result['success']) {
+            // Show success message
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(result['message'] ?? 'Jadwal berhasil ditambahkan')),
+              SnackBar(
+                content: Text(result['message'] ?? 'Jadwal berhasil ditambahkan'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
             );
-            await _loadBarberData(); // Refresh data
+            
+            // Refresh data to update UI
+            await _loadBarberData();
+            
+            
+            // Optional: Force rebuild of time slots if needed
+            if (mounted) {
+              setState(() {
+                // This will trigger a rebuild of the entire widget
+              });
+            }
+            
           } else {
-            throw Exception(result['message']);
+            throw Exception(result['message'] ?? 'Gagal menambahkan jadwal');
           }
         } catch (e) {
+          // Hide loading snackbar
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          
+          // Show error message
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error adding time slots: $e')),
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
           );
         }
       },
@@ -368,7 +455,7 @@ Future<void> _addBulkTimeSlots() async {
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error deleting time slot: $e')),
+          SnackBar(content: Text('Gagal menghapus jadwal: $e')),
         );
       }
     }
@@ -497,157 +584,330 @@ Future<void> _addBulkTimeSlots() async {
   }
 
   @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        body: const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    // If no user data is found, redirect to login
-    if (_userType == null || _userData == null) {
-      Future.microtask(() {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-        );
-      });
-      
-      return const Scaffold(
-        body: Center(
-          child: Text('Redirecting to login...'),
-        ),
-      );
-    }
-
-    // Build UI based on user type
+Widget build(BuildContext context) {
+  if (_isLoading) {
     return Scaffold(
-      body: SafeArea(
-        child: IndexedStack(
-          index: _selectedIndex,
-          children: [
-            _buildHomePage(),
-            _buildBookingsPage(),
-            _buildProfilePage(),
-          ],
-        ),
+      body: const Center(
+        child: CircularProgressIndicator(),
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
+
+  // If no user data is found, redirect to login
+  if (_userType == null || _userData == null) {
+    Future.microtask(() {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    });
+    
+    return const Scaffold(
+      body: Center(
+        child: Text('Redirecting to login...'),
+      ),
+    );
+  }
+
+  // Build UI based on user type
+  return Scaffold(
+    body: SafeArea(
+      child: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          _buildHomePage(),
+          _buildBookingsPage(),
+          _buildChatPage(), // Add chat page
+          _buildProfilePage(),
+        ],
+      ),
+    ),
+    bottomNavigationBar: _buildBottomNavigationBar(),
+  );
+}
+
+Widget _buildChatPage() {
+  return const ChatListScreen();
+}
 
   Widget _buildBottomNavigationBar() {
-    return Container(
-      decoration: BoxDecoration(
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.2),
-            spreadRadius: 0,
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        selectedItemColor: Theme.of(context).primaryColor,
-        unselectedItemColor: Colors.grey,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(_userType == UserType.barber ? Icons.home : Icons.search),
-            label: _userType == UserType.barber ? 'Home' : 'Cari',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
-            label: 'Booking',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profil',
-          ),
-        ],
-      ),
-    );
-  }
+  return Container(
+    decoration: BoxDecoration(
+      boxShadow: [
+        BoxShadow(
+          color: Colors.grey.withOpacity(0.2),
+          spreadRadius: 0,
+          blurRadius: 10,
+          offset: const Offset(0, -2),
+        ),
+      ],
+    ),
+    child: BottomNavigationBar(
+      type: BottomNavigationBarType.fixed,
+      currentIndex: _selectedIndex,
+      onTap: (index) {
+        setState(() {
+          _selectedIndex = index;
+        });
+      },
+      selectedItemColor: Theme.of(context).primaryColor,
+      unselectedItemColor: Colors.grey,
+      selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
+      items: [
+        BottomNavigationBarItem(
+          icon: Icon(_userType == UserType.barber ? Icons.home : Icons.search),
+          label: _userType == UserType.barber ? 'Home' : 'Cari',
+        ),
+        const BottomNavigationBarItem(
+          icon: Icon(Icons.calendar_today),
+          label: 'Booking',
+        ),
+        const BottomNavigationBarItem(
+          icon: Icon(Icons.chat_bubble_outline),
+          label: 'Chat',
+        ),
+        const BottomNavigationBarItem(
+          icon: Icon(Icons.person),
+          label: 'Profil',
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildHomePage() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Top section with greeting and profile
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Halo, ${_userData.nama.split(' ')[0]}!',
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
+  return SingleChildScrollView(
+    padding: const EdgeInsets.all(16.0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Top section with greeting and profile
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Halo, ${_userData.nama.split(' ')[0]}!',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _userType == UserType.barber
-                          ? 'Selamat datang di dashboard barber Anda'
-                          : 'Temukan barber terbaik untuk Anda',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
-                      ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _userType == UserType.barber
+                        ? 'Selamat datang di dashboard barber Anda'
+                        : 'Temukan barber terbaik untuk Anda',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 14,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedIndex = 2; // Switch to profile tab
-                  });
+            ),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedIndex = 2; // Switch to profile tab
+                });
+              },
+              child: _buildProfileAvatar(), // Use new method
+            ),
+          ],
+        ),
+        
+        const SizedBox(height: 24),
+        
+        // Rest of your existing content...
+        if (_isLoadingData)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32.0),
+              child: CircularProgressIndicator(),
+            ),
+          )
+        else
+          _userType == UserType.barber 
+              ? _buildBarberDashboardContent() 
+              : _buildPelangganDashboardContent(),
+      ],
+    ),
+  );
+}
+
+// Method baru untuk membangun profile avatar
+Widget _buildProfileAvatar() {
+  final photoPath = _userData is Barber 
+      ? (_userData as Barber).profilePhoto 
+      : (_userData as Pelanggan).profilePhoto;
+      
+  final photoUrl = photoPath != null 
+      ? 'http://192.168.1.11:8000/storage/$photoPath'  // Hardcode URL yang working
+      : null;
+  
+  return Container(
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(
+        color: Theme.of(context).primaryColor.withOpacity(0.3),
+        width: 2,
+      ),
+    ),
+    child: CircleAvatar(
+      radius: 24,
+      backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
+      child: photoUrl != null 
+          ? ClipOval(
+              child: Image.network(
+                photoUrl,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    ),
+                  );
                 },
-                child: CircleAvatar(
-                  radius: 24,
-                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
-                  child: Icon(
+                errorBuilder: (context, error, stackTrace) {
+                  print('Error loading profile photo: $error');
+                  print('Failed URL: $photoUrl');
+                  return Icon(
                     _userType == UserType.barber ? Icons.content_cut : Icons.person,
                     color: Theme.of(context).primaryColor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Loading indicator if data is being loaded
-          if (_isLoadingData)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32.0),
-                child: CircularProgressIndicator(),
+                    size: 24,
+                  );
+                },
               ),
             )
-          else
-            // Dashboard content based on user type
-            _userType == UserType.barber 
-                ? _buildBarberDashboardContent() 
-                : _buildPelangganDashboardContent(),
-        ],
+          : Icon(
+              _userType == UserType.barber ? Icons.content_cut : Icons.person,
+              color: Theme.of(context).primaryColor,
+              size: 24,
+            ),
+    ),
+  );
+}
+
+Widget _buildProfileAvatarAlternative() {
+  final photoUrl = _getProfilePhotoUrl(_userData is Barber 
+      ? (_userData as Barber).profilePhoto 
+      : (_userData as Pelanggan).profilePhoto);
+  
+  return Container(
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(
+        color: Theme.of(context).primaryColor.withOpacity(0.3),
+        width: 2,
       ),
-    );
+    ),
+    child: CircleAvatar(
+      radius: 24,
+      backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
+      child: photoUrl != null 
+          ? ClipOval(
+              child: Image.network(
+                photoUrl,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  print('Error loading profile photo: $error');
+                  print('Failed URL: $photoUrl');
+                  
+                  // Try alternative URL format
+                  final alternativeUrl = photoUrl.replaceAll('/storage/', '/public/storage/');
+                  if (alternativeUrl != photoUrl) {
+                    return Image.network(
+                      alternativeUrl,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error2, stackTrace2) {
+                        print('Alternative URL also failed: $alternativeUrl');
+                        return Icon(
+                          _userType == UserType.barber ? Icons.content_cut : Icons.person,
+                          color: Theme.of(context).primaryColor,
+                          size: 24,
+                        );
+                      },
+                    );
+                  }
+                  
+                  return Icon(
+                    _userType == UserType.barber ? Icons.content_cut : Icons.person,
+                    color: Theme.of(context).primaryColor,
+                    size: 24,
+                  );
+                },
+              ),
+            )
+          : Icon(
+              _userType == UserType.barber ? Icons.content_cut : Icons.person,
+              color: Theme.of(context).primaryColor,
+              size: 24,
+            ),
+    ),
+  );
+}
+
+Future<void> _testNetworkConnectivity() async {
+  try {
+    print('Testing network connectivity...');
+    
+    // Test 1: Base Laravel URL
+    final baseResponse = await http.get(
+      Uri.parse(Constants.baseUrl.replaceAll('/api', '')),
+    ).timeout(const Duration(seconds: 5));
+    print('Laravel base URL status: ${baseResponse.statusCode}');
+    
+    // Test 2: Storage URL
+    final storageResponse = await http.get(
+      Uri.parse(Constants.storageUrl),
+    ).timeout(const Duration(seconds: 5));
+    print('Storage URL status: ${storageResponse.statusCode}');
+    
+    // Test 3: Specific photo
+    final photoUrl = '${Constants.storageUrl}/profile_photos/1748322244_fQtGOYbc0M.jpg';
+    final photoResponse = await http.head(
+      Uri.parse(photoUrl),
+    ).timeout(const Duration(seconds: 5));
+    print('Photo URL status: ${photoResponse.statusCode}');
+    
+  } catch (e) {
+    print('Network test error: $e');
   }
+}
 
   Widget _buildBarberDashboardContent() {
     return Column(
@@ -1053,9 +1313,29 @@ Widget _buildBarberBookingsPage() {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            IconButton(
-              onPressed: _loadBarberData,
-              icon: const Icon(Icons.refresh),
+            Row(
+              children: [
+                if (_isSelectionMode && _selectedScheduleIds.isNotEmpty)
+                  IconButton(
+                    onPressed: _deleteSelectedSchedules,
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    tooltip: 'Hapus Terpilih',
+                  ),
+                if (_isSelectionMode)
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _isSelectionMode = false;
+                        _selectedScheduleIds.clear();
+                      });
+                    },
+                    child: const Text('Batal'),
+                  ),
+                IconButton(
+                  onPressed: _loadBarberData,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
             ),
           ],
         ),
@@ -1076,6 +1356,8 @@ Widget _buildBarberBookingsPage() {
                   onTap: () {
                     setState(() {
                       _isScheduleTab = true;
+                      _isSelectionMode = false;
+                      _selectedScheduleIds.clear();
                     });
                   },
                   child: Container(
@@ -1109,6 +1391,8 @@ Widget _buildBarberBookingsPage() {
                   onTap: () {
                     setState(() {
                       _isScheduleTab = false;
+                      _isSelectionMode = false;
+                      _selectedScheduleIds.clear();
                     });
                   },
                   child: Container(
@@ -1147,7 +1431,7 @@ Widget _buildBarberBookingsPage() {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Date selector with month-end dates
+              // Date selector
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -1159,6 +1443,8 @@ Widget _buildBarberBookingsPage() {
                             () {
                               setState(() {
                                 _selectedDate = dateInfo['date'];
+                                _isSelectionMode = false;
+                                _selectedScheduleIds.clear();
                               });
                             },
                           ))
@@ -1168,27 +1454,90 @@ Widget _buildBarberBookingsPage() {
               
               const SizedBox(height: 24),
               
-              // Time slots for selected date
+              // Time slots header with bulk actions
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'Waktu Tersedia',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  TextButton.icon(
-                    onPressed: _addTimeSlot,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Tambah'),
+                  Row(
+                    children: [
+                      if (todaysSchedules.isNotEmpty && !_isSelectionMode)
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _isSelectionMode = true;
+                            });
+                          },
+                          icon: const Icon(Icons.checklist, size: 18),
+                          label: const Text('Pilih'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.orange,
+                          ),
+                        ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: _addTimeSlot,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Tambah'),
+                      ),
+                    ],
                   ),
                 ],
               ),
               
               const SizedBox(height: 16),
               
+              // Selection mode info
+              if (_isSelectionMode) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${_selectedScheduleIds.length} jadwal dipilih. Tap jadwal untuk memilih/membatalkan pilihan.',
+                          style: TextStyle(
+                            color: Colors.blue[700],
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      if (_selectedScheduleIds.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _selectedScheduleIds.clear();
+                            });
+                          },
+                          child: const Text('Batal Semua'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.blue[700],
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            minimumSize: Size.zero,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              
+              // Time slots grid
               if (todaysSchedules.isEmpty)
                 Center(
                   child: Column(
@@ -1228,104 +1577,264 @@ Widget _buildBarberBookingsPage() {
                   spacing: 8,
                   runSpacing: 8,
                   children: todaysSchedules.map((schedule) => 
-                    _buildTimeSlotChip(schedule)
+                    _buildSelectableTimeSlotChip(schedule)
                   ).toList(),
                 ),
             ],
           )
-       else
-  Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      // Tab for booking status
-      Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _isActiveBookingTab = true;
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: _isActiveBookingTab ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: _isActiveBookingTab ? [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        spreadRadius: 0,
-                        blurRadius: 5,
-                        offset: const Offset(0, 1),
-                      ),
-                    ] : null,
-                  ),
-                  child: Center(
-                    child: Text(
-                      'Sedang Berlangsung',
-                      style: TextStyle(
-                        fontWeight: _isActiveBookingTab ? FontWeight.bold : FontWeight.normal,
-                        color: _isActiveBookingTab ? Colors.black : Colors.grey[600],
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Booking tabs and content...
+              // Keep existing booking content here
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _isActiveBookingTab = true;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _isActiveBookingTab ? Colors.white : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: _isActiveBookingTab ? [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.1),
+                                spreadRadius: 0,
+                                blurRadius: 5,
+                                offset: const Offset(0, 1),
+                              ),
+                            ] : null,
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Sedang Berlangsung',
+                              style: TextStyle(
+                                fontWeight: _isActiveBookingTab ? FontWeight.bold : FontWeight.normal,
+                                color: _isActiveBookingTab ? Colors.black : Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _isActiveBookingTab = false;
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: !_isActiveBookingTab ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: !_isActiveBookingTab ? [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        spreadRadius: 0,
-                        blurRadius: 5,
-                        offset: const Offset(0, 1),
-                      ),
-                    ] : null,
-                  ),
-                  child: Center(
-                    child: Text(
-                      'Selesai',
-                      style: TextStyle(
-                        fontWeight: !_isActiveBookingTab ? FontWeight.bold : FontWeight.normal,
-                        color: !_isActiveBookingTab ? Colors.black : Colors.grey[600],
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _isActiveBookingTab = false;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: !_isActiveBookingTab ? Colors.white : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: !_isActiveBookingTab ? [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.1),
+                                spreadRadius: 0,
+                                blurRadius: 5,
+                                offset: const Offset(0, 1),
+                              ),
+                            ] : null,
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Selesai',
+                              style: TextStyle(
+                                fontWeight: !_isActiveBookingTab ? FontWeight.bold : FontWeight.normal,
+                                color: !_isActiveBookingTab ? Colors.black : Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              
+              const SizedBox(height: 16),
+              
+              _buildFilteredBarberBookings(_isActiveBookingTab ? 'upcoming' : 'completed'),
+            ],
+          ),
+      ],
+    ),
+  );
+}
+
+// Method baru untuk selectable time slot chip
+Widget _buildSelectableTimeSlotChip(Schedule schedule) {
+  final isBooked = schedule.isBooked;
+  final isSelected = _selectedScheduleIds.contains(schedule.id);
+  
+  return GestureDetector(
+    onTap: () {
+      if (_isSelectionMode && !isBooked) {
+        setState(() {
+          if (isSelected) {
+            _selectedScheduleIds.remove(schedule.id);
+          } else {
+            _selectedScheduleIds.add(schedule.id);
+          }
+        });
+      }
+    },
+    onLongPress: !isBooked ? () => _deleteTimeSlot(schedule) : null,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isSelected 
+            ? Colors.red.withOpacity(0.2)
+            : isBooked 
+                ? Colors.grey[200] 
+                : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isSelected
+              ? Colors.red
+              : isBooked 
+                  ? Colors.grey[300]! 
+                  : Theme.of(context).primaryColor,
+          width: isSelected ? 2 : 1,
         ),
       ),
-      
-      const SizedBox(height: 16),
-      
-      // Filtered bookings
-      _buildFilteredBarberBookings(_isActiveBookingTab ? 'upcoming' : 'completed'),
-    ],
-  ),
-  ]
-  )
+      child: Stack(
+        children: [
+          Column(
+            children: [
+              Text(
+                schedule.jam,
+                style: TextStyle(
+                  color: isSelected
+                      ? Colors.red[700]
+                      : isBooked 
+                          ? Colors.grey[500] 
+                          : Colors.black,
+                  fontWeight: FontWeight.bold,
+                  decoration: isBooked ? TextDecoration.lineThrough : null,
+                ),
+              ),
+              if (isBooked && schedule.bookingInfo != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  schedule.bookingInfo!.pelangganNama,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (_isSelectionMode && !isBooked)
+            Positioned(
+              top: -8,
+              right: -8,
+              child: Icon(
+                isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: isSelected ? Colors.red : Colors.grey[400],
+                size: 18,
+              ),
+            ),
+        ],
+      ),
+    ),
   );
-  
+}
+
+// Method untuk menghapus jadwal yang dipilih
+Future<void> _deleteSelectedSchedules() async {
+  if (_selectedScheduleIds.isEmpty) return;
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Hapus Jadwal Terpilih'),
+      content: Text(
+        'Apakah Anda yakin ingin menghapus ${_selectedScheduleIds.length} jadwal yang dipilih?'
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Batal'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          child: const Text('Hapus Semua'),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed == true) {
+    try {
+      // Show loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 16),
+              Text('Menghapus jadwal...'),
+            ],
+          ),
+          duration: Duration(seconds: 10),
+        ),
+      );
+      
+      final result = await _barberService.deleteMultipleTimeSlots(_selectedScheduleIds.toList());
+
+      // Hide loading
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      if (result['success'] != false) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${_selectedScheduleIds.length} jadwal berhasil dihapus'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        setState(() {
+          _isSelectionMode = false;
+          _selectedScheduleIds.clear();
+        });
+        
+        await _loadBarberData(); // Refresh data
+      } else {
+        throw Exception(result['message'] ?? 'Gagal menghapus jadwal');
+      }
+    } catch (e) {
+      // Hide loading
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 }
 
 // Tambahkan helper method ini setelah _buildBarberBookingsPage()
@@ -1371,6 +1880,11 @@ Widget _buildFilteredBarberBookings(String status) {
   return Column(
     children: filteredBookings.map((booking) => _buildBarberBookingCard(booking)).toList(),
   );
+}
+
+List<Schedule> get todaysSchedules {
+  final dateKey = DateFormat('yyyy-MM-dd').format(_selectedDate as DateTime);
+  return _schedules[dateKey] ?? [];
 }
 
 // Method helper untuk mendapatkan tanggal hingga akhir bulan
@@ -1461,7 +1975,7 @@ Widget _buildBarberBookingCard(Booking booking) {
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                    'Pelanggan: ${booking.pelangganNama}',
+                  'Pelanggan: ${booking.pelangganNama}',
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontSize: 14,
@@ -1538,13 +2052,28 @@ Widget _buildBarberBookingCard(Booking booking) {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              // Chat button
+OutlinedButton.icon(
+  onPressed: () {
+    // Navigasi chat belum diimplementasikan
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Fitur chat belum tersedia')),
+    );
+  },
+  icon: const Icon(Icons.chat_bubble_outline, size: 16),
+  label: const Text('Chat'),
+  style: OutlinedButton.styleFrom(
+    foregroundColor: Colors.blue,
+    side: const BorderSide(color: Colors.blue),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+    minimumSize: const Size(0, 32),
+  ),
+),
+              const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: () {
                   // Implementasi untuk menghubungi pelanggan
                   if (booking.bookingDetails.telepon != null) {
-                    // Launch phone dialer - Uncomment if you have url_launcher
-                    // import 'package:url_launcher/url_launcher.dart';
-                    // launchUrl(Uri.parse('tel:${booking.bookingDetails.telepon}'));
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Menghubungi ${booking.bookingDetails.telepon}')),
                     );
@@ -1593,6 +2122,7 @@ Widget _buildBarberBookingCard(Booking booking) {
     ),
   );
 }
+
 
  Widget _buildPelangganBookingsPage() {
   final activeBookings = _bookings.where((b) => b.status == 'upcoming').toList();
@@ -1833,214 +2363,305 @@ Widget _buildHistoryBookingsContent(List<Booking> historyBookings) {
 }
 
   Widget _buildProfilePage() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Profil',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
+  return SingleChildScrollView(
+    padding: const EdgeInsets.all(16.0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Profil',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
           ),
-          
-          const SizedBox(height: 24),
-          
-          // Profile card
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  spreadRadius: 0,
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+        ),
+        
+        const SizedBox(height: 24),
+        
+        // Profile card
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1),
+                spreadRadius: 0,
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // Profile picture with photo
+              _buildProfilePictureSection(),
+              
+              const SizedBox(height: 16),
+              
+              // Name
+              Text(
+                _userData.nama,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
                 ),
-              ],
-            ),
-            child: Column(
-              children: [
-                // Profile picture
-                CircleAvatar(
-                  radius: 48,
-                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
-                  child: Icon(
-                    _userType == UserType.barber ? Icons.content_cut : Icons.person,
-                    size: 48,
+              ),
+              
+              const SizedBox(height: 4),
+              
+              // Role badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _userType == UserType.barber ? 'Barber' : 'Pelanggan',
+                  style: TextStyle(
                     color: Theme.of(context).primaryColor,
-                  ),
-                ),
-                
-                const SizedBox(height: 16),
-                
-                // Name
-                Text(
-                  _userData.nama,
-                  style: const TextStyle(
-                    fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                
-                const SizedBox(height: 4),
-                
-                // Role
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _userType == UserType.barber ? 'Barber' : 'Pelanggan',
-                    style: TextStyle(
-                      color: Theme.of(context).primaryColor,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Contact information
-                _buildProfileInfoItem(
-                  'Email',
-                  _userData.email,
-                  Icons.email_outlined,
-                ),
-                
-                const Divider(height: 24),
-                
-                _buildProfileInfoItem(
-                  'Telepon',
-                  _userData.telepon ?? 'Belum diisi',
-                  Icons.phone_outlined,
-                ),
-                
-                if (_userType == UserType.pelanggan && _userData is Pelanggan) ...[
-                  const Divider(height: 24),
-                  _buildProfileInfoItem(
-                    'Alamat',
-                    (_userData as Pelanggan).alamat ?? 'Belum diisi',
-                    Icons.location_on_outlined,
-                  ),
-                ] else if (_userType == UserType.barber && _userData is Barber) ...[
-                  const Divider(height: 24),
-                  _buildProfileInfoItem(
-                    'Spesialisasi',
-                    (_userData as Barber).spesialisasi ?? 'Belum diisi',
-                    Icons.content_cut,
-                  ),
-                  const Divider(height: 24),
-                  _buildProfileInfoItem(
-                    'Harga Layanan',
-                    PelangganService.formatPrice((_userData as Barber).harga),
-                    Icons.attach_money,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Action buttons
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  spreadRadius: 0,
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                _buildProfileActionButton(
-                  'Edit Profil',
-                  Icons.edit,
-                  Colors.blue,
-                  () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EditProfileScreen(
-                          userType: _userType!,
-                          userData: _userData,
-                        ),
-                      ),
-                    ).then((result) {
-                      // Refresh data if profile was updated
-                      if (result == true) {
-                        _loadUserData();
-                      }
-                    });
-                  },
-                ),
-                
-                const Divider(height: 16),
-                
-                _buildProfileActionButton(
-                  'Pengaturan',
-                  Icons.settings,
-                  Colors.orange,
-                  () {
-                    // TODO: Navigate to settings
-                  },
-                ),
-                
-                const Divider(height: 16),
-                
-                _buildProfileActionButton(
-                  'Bantuan',
-                  Icons.help_outline,
-                  Colors.green,
-                  () {
-                    // TODO: Navigate to help
-                  },
-                ),
-                
-                const Divider(height: 16),
-                
-                _buildProfileActionButton(
-                  'Keluar',
-                  Icons.logout,
-                  Colors.red,
-                  _showLogoutConfirmation,
-                ),
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // App version
-          Center(
-            child: Text(
-              'BarberGo v1.0.0',
-              style: TextStyle(
-                color: Colors.grey[500],
-                fontSize: 12,
               ),
+              
+              const SizedBox(height: 24),
+              
+              // Rest of profile information...
+              _buildProfileInfoItem(
+                'Email',
+                _userData.email,
+                Icons.email_outlined,
+              ),
+              
+              const Divider(height: 24),
+              
+              _buildProfileInfoItem(
+                'Telepon',
+                _userData.telepon ?? 'Belum diisi',
+                Icons.phone_outlined,
+              ),
+              
+              if (_userType == UserType.pelanggan && _userData is Pelanggan) ...[
+                const Divider(height: 24),
+                _buildProfileInfoItem(
+                  'Alamat',
+                  (_userData as Pelanggan).alamat ?? 'Belum diisi',
+                  Icons.location_on_outlined,
+                ),
+              ] else if (_userType == UserType.barber && _userData is Barber) ...[
+                const Divider(height: 24),
+                _buildProfileInfoItem(
+                  'Spesialisasi',
+                  (_userData as Barber).spesialisasi ?? 'Belum diisi',
+                  Icons.content_cut,
+                ),
+                const Divider(height: 24),
+                _buildProfileInfoItem(
+                  'Harga Layanan',
+                  PelangganService.formatPrice((_userData as Barber).harga),
+                  Icons.attach_money,
+                ),
+              ],
+            ],
+          ),
+        ),
+        
+        // Rest of your existing profile content...
+        const SizedBox(height: 24),
+        
+        // Action buttons
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1),
+                spreadRadius: 0,
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              _buildProfileActionButton(
+                'Edit Profil',
+                Icons.edit,
+                Colors.blue,
+                () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditProfileScreen(
+                        userType: _userType!,
+                        userData: _userData,
+                      ),
+                    ),
+                  ).then((result) {
+                    if (result == true) {
+                      _loadUserData();
+                    }
+                  });
+                },
+              ),
+              
+              const Divider(height: 16),
+              
+              _buildProfileActionButton(
+                'Pengaturan',
+                Icons.settings,
+                Colors.orange,
+                () {
+                  // TODO: Navigate to settings
+                },
+              ),
+              
+              const Divider(height: 16),
+              
+              _buildProfileActionButton(
+                'Bantuan',
+                Icons.help_outline,
+                Colors.green,
+                () {
+                  // TODO: Navigate to help
+                },
+              ),
+              
+              const Divider(height: 16),
+              
+              _buildProfileActionButton(
+                'Keluar',
+                Icons.logout,
+                Colors.red,
+                _showLogoutConfirmation,
+              ),
+            ],
+          ),
+        ),
+        
+        const SizedBox(height: 24),
+        
+        // App version
+        Center(
+          child: Text(
+            'BarberGo v1.0.0',
+            style: TextStyle(
+              color: Colors.grey[500],
+              fontSize: 12,
             ),
           ),
-          
-          const SizedBox(height: 24),
-        ],
-      ),
-    );
-  }
+        ),
+        
+        const SizedBox(height: 24),
+      ],
+    ),
+  );
+}
 
+// Method baru untuk profile picture section
+Widget _buildProfilePictureSection() {
+  final photoPath = _userData is Barber 
+      ? (_userData as Barber).profilePhoto 
+      : (_userData as Pelanggan).profilePhoto;
+      
+  final photoUrl = photoPath != null 
+      ? 'http://192.168.1.11:8000/storage/$photoPath'  // Hardcode URL yang working
+      : null;
+  
+  return Stack(
+    children: [
+      Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Theme.of(context).primaryColor.withOpacity(0.3),
+            width: 3,
+          ),
+        ),
+        child: CircleAvatar(
+          radius: 48,
+          backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
+          child: photoUrl != null 
+              ? ClipOval(
+                  child: Image.network(
+                    photoUrl,
+                    width: 96,
+                    height: 96,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return SizedBox(
+                        width: 96,
+                        height: 96,
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                    loadingProgress.expectedTotalBytes!
+                                : null,
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      print('Error loading profile photo: $error');
+                      return Icon(
+                        _userType == UserType.barber ? Icons.content_cut : Icons.person,
+                        size: 48,
+                        color: Theme.of(context).primaryColor,
+                      );
+                    },
+                  ),
+                )
+              : Icon(
+                  _userType == UserType.barber ? Icons.content_cut : Icons.person,
+                  size: 48,
+                  color: Theme.of(context).primaryColor,
+                ),
+        ),
+      ),
+      Positioned(
+        bottom: 0,
+        right: 0,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).primaryColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => EditProfileScreen(
+                    userType: _userType!,
+                    userData: _userData,
+                  ),
+                ),
+              ).then((result) {
+                if (result == true) {
+                  _loadUserData();
+                }
+              });
+            },
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+   // Update _buildBarberCard dengan tombol chat
   Widget _buildBarberCard(BarberSearch barber) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -2060,7 +2681,6 @@ Widget _buildHistoryBookingsContent(List<Booking> historyBookings) {
         color: Colors.transparent,
         child: InkWell(
           onTap: () {
-            // Navigate to barber details
             _showBarberDetails(barber);
           },
           borderRadius: BorderRadius.circular(16),
@@ -2075,11 +2695,28 @@ Widget _buildHistoryBookingsContent(List<Booking> historyBookings) {
                     color: Theme.of(context).primaryColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    Icons.content_cut,
-                    size: 32,
-                    color: Theme.of(context).primaryColor,
-                  ),
+                  child: barber.profilePhoto != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            _getProfilePhotoUrl(barber.profilePhoto) ?? '',
+                            width: 70,
+                            height: 70,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Icon(
+                                Icons.content_cut,
+                                size: 32,
+                                color: Theme.of(context).primaryColor,
+                              );
+                            },
+                          ),
+                        )
+                      : Icon(
+                          Icons.content_cut,
+                          size: 32,
+                          color: Theme.of(context).primaryColor,
+                        ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -2142,23 +2779,51 @@ Widget _buildHistoryBookingsContent(List<Booking> historyBookings) {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    ElevatedButton(
-                      onPressed: () {
-                        _showBarberDetails(barber);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Tombol Chat (BARU) - seperti di screenshot yang dilingkari
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: IconButton(
+                            onPressed: () => _navigateToDirectChat(barber),
+                            icon: const Icon(
+                              Icons.chat_bubble_outline,
+                              color: Colors.blue,
+                              size: 20,
+                            ),
+                            tooltip: 'Chat',
+                            padding: const EdgeInsets.all(8),
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                          ),
                         ),
-                      ),
-                      child: const Text(
-                        'Lihat',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                        const SizedBox(width: 8),
+                        // Tombol Lihat
+                        ElevatedButton(
+                          onPressed: () {
+                            _showBarberDetails(barber);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text(
+                            'Lihat',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),
@@ -2170,129 +2835,232 @@ Widget _buildHistoryBookingsContent(List<Booking> historyBookings) {
     );
   }
 
-  Widget _buildBookingCard(Booking booking) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 0,
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
+// Method baru untuk navigasi ke direct chat
+void _navigateToDirectChat(BarberSearch barber) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => DirectChatScreen(
+        barberId: barber.id,
+        barberName: barber.nama,
+        barberPhoto: barber.profilePhoto,
+        barberSpesialisasi: barber.spesialisasi,
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _showBookingDetails(booking),
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      booking.barber.nama,
-                      style: const TextStyle(
+    ),
+  );
+}
+
+
+  Widget _buildBookingCard(Booking booking) {
+  return Container(
+    margin: const EdgeInsets.only(bottom: 16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.grey.withOpacity(0.1),
+          spreadRadius: 0,
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    ),
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showBookingDetails(booking),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    booking.barber.nama,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(booking.status).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      booking.status == 'upcoming' ? 'Mendatang' : 'Selesai',
+                      style: TextStyle(
+                        color: _getStatusColor(booking.status),
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        fontSize: 16,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _getStatusColor(booking.status).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.schedule, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${booking.schedule.formattedDate} • ${booking.schedule.time}',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.attach_money, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Text(
+                    booking.bookingDetails.formattedAmount ?? 
+                    PelangganService.formatPrice(booking.bookingDetails.totalAmount),
+                    style: TextStyle(
+                      color: Theme.of(context).primaryColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+              
+              // Payment status
+              if (booking.bookingDetails.statusPembayaran != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      booking.bookingDetails.statusPembayaran == 'paid' 
+                          ? Icons.check_circle 
+                          : Icons.pending,
+                      size: 16,
+                      color: booking.bookingDetails.statusPembayaran == 'paid'
+                          ? Colors.green
+                          : Colors.orange,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      booking.bookingDetails.statusPembayaran == 'paid'
+                          ? 'Sudah Dibayar'
+                          : 'Belum Dibayar',
+                      style: TextStyle(
+                        color: booking.bookingDetails.statusPembayaran == 'paid'
+                            ? Colors.green
+                            : Colors.orange,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       ),
+                    ),
+                  ],
+                ),
+              ],
+              
+              if (booking.timeUntilAppointment != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.timer, size: 16, color: Colors.grey[600]),
+                    const SizedBox(width: 4),
+                    Text(
+                      booking.timeUntilAppointment!,
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              
+              // Action buttons
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  // Payment button (only if not paid and status is upcoming)
+                  if (booking.status == 'upcoming' && 
+                      (booking.bookingDetails.statusPembayaran == null || 
+                       booking.bookingDetails.statusPembayaran != 'paid')) ...[
+                    OutlinedButton.icon(
+                      onPressed: () => _navigateToPayment(booking),
+                      icon: const Icon(Icons.payment, size: 16),
+                      label: const Text('Bayar'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.green,
+                        side: const BorderSide(color: Colors.green),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                        minimumSize: const Size(0, 32),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  
+                  // Chat button (only if paid)
+if (booking.bookingDetails.statusPembayaran == 'paid') ...[
+  OutlinedButton.icon(
+    onPressed: () {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fitur chat belum tersedia')),
+      );
+    },
+    icon: const Icon(Icons.chat_bubble_outline, size: 16),
+    label: const Text('Chat'),
+    style: OutlinedButton.styleFrom(
+      foregroundColor: Colors.blue,
+      side: const BorderSide(color: Colors.blue),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      minimumSize: const Size(0, 32),
+    ),
+  ),
+  const SizedBox(width: 8),
+],
+                  
+                  // Cancel button
+                  if (booking.canCancel) ...[
+                    TextButton(
+                      onPressed: () => _cancelBooking(booking),
                       child: Text(
-                        booking.status == 'upcoming' ? 'Mendatang' : 'Selesai',
+                        'Batalkan',
                         style: TextStyle(
-                          color: _getStatusColor(booking.status),
-                          fontSize: 12,
+                          color: Colors.red[700],
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.schedule, size: 16, color: Colors.grey[600]),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${booking.schedule.formattedDate} • ${booking.schedule.time}',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.attach_money, size: 16, color: Colors.grey[600]),
-                    const SizedBox(width: 4),
-                    Text(
-                      booking.bookingDetails.formattedAmount ?? 
-                      PelangganService.formatPrice(booking.bookingDetails.totalAmount),
-                      style: TextStyle(
-                        color: Theme.of(context).primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-                if (booking.timeUntilAppointment != null) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(Icons.timer, size: 16, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
-                      Text(
-                        booking.timeUntilAppointment!,
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
-                if (booking.canCancel) ...[
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => _cancelBooking(booking),
-                        child: Text(
-                          'Batalkan',
-                          style: TextStyle(
-                            color: Colors.red[700],
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+void _navigateToPayment(Booking booking) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => PaymentScreen(booking: booking),
+    ),
+  ).then((result) {
+    if (result == true) {
+      // Payment was created, refresh bookings
+      _loadPelangganData();
+    }
+  });
+}
 
   Widget _buildTimeSlotChip(Schedule schedule) {
     final isBooked = schedule.isBooked;
@@ -3055,71 +3823,111 @@ class __BookingDialogState extends State<_BookingDialog> {
   }
 
   Future<void> _makeBooking() async {
-    if (_selectedSlot == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih waktu terlebih dahulu')),
-      );
-      return;
-    }
+  if (_selectedSlot == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Pilih waktu terlebih dahulu')),
+    );
+    return;
+  }
 
-    if (_alamatController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Alamat harus diisi')),
-      );
-      return;
-    }
+  if (_alamatController.text.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Alamat harus diisi')),
+    );
+    return;
+  }
 
-    setState(() => _isBooking = true);
+  setState(() => _isBooking = true);
 
-    try {
-      final result = await widget.pelangganService.createBooking(
-        barberId: widget.barber.id,
-        jadwalId: _selectedSlot!.id,
-        alamatLengkap: _alamatController.text,
-        email: _emailController.text,
-        telepon: _teleponController.text,
-        ongkosKirim: 10000, // Default delivery fee
-      );
+  try {
+    final result = await widget.pelangganService.createBooking(
+      barberId: widget.barber.id,
+      jadwalId: _selectedSlot!.id,
+      alamatLengkap: _alamatController.text,
+      email: _emailController.text,
+      telepon: _teleponController.text,
+      ongkosKirim: 10000,
+    );
 
-      if (result['success']) {
-        Navigator.pop(context);
-        widget.onBookingSuccess();
-        
-        // Show success dialog
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Booking Berhasil!'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Booking Anda dengan ${widget.barber.nama} telah dikonfirmasi.'),
-                const SizedBox(height: 8),
-                Text('ID Transaksi: ${result['booking']['id_transaksi']}'),
-                const SizedBox(height: 8),
-                Text('Total: ${result['booking']['total_amount'] != null ? PelangganService.formatPrice(result['booking']['total_amount']) : ""}'),
-              ],
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
+    if (result['success']) {
+      Navigator.pop(context);
+      
+      final bookingData = result['booking'];
+      
+      // Show success dialog with payment option
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('Booking Berhasil!'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Booking Anda dengan ${widget.barber.nama} telah dibuat.'),
+              const SizedBox(height: 8),
+              Text('ID Transaksi: ${bookingData['id_transaksi']}'),
+              const SizedBox(height: 8),
+              Text('Total: ${bookingData['total_amount'] != null ? 
+                'Rp ${bookingData['total_amount'].toStringAsFixed(0)}' : ""}'),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber, color: Colors.orange[700], size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Silakan lakukan pembayaran untuk mengkonfirmasi booking Anda.',
+                        style: TextStyle(
+                          color: Colors.orange[700],
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-        );
-      } else {
-        throw Exception(result['message'] ?? 'Booking failed');
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error making booking: $e')),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                widget.onBookingSuccess();
+              },
+              child: const Text('Nanti'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                // Navigate to payment screen
+                // You'll need to create a Booking object from bookingData
+                // and navigate to PaymentScreen
+                widget.onBookingSuccess();
+              },
+              child: const Text('Bayar Sekarang'),
+            ),
+          ],
+        ),
       );
-    } finally {
-      setState(() => _isBooking = false);
+    } else {
+      throw Exception(result['message'] ?? 'Booking failed');
     }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error making booking: $e')),
+    );
+  } finally {
+    setState(() => _isBooking = false);
   }
+}
 
   @override
   Widget build(BuildContext context) {

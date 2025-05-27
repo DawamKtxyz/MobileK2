@@ -150,6 +150,8 @@ class Booking {
   );
 }
 
+  get pelangganId => null;
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -215,6 +217,8 @@ class BarberInfo {
       nama: 'Unknown Barber',
     );
   }
+
+  get profilePhoto => null;
 }
 class ScheduleInfo {
   final String date;
@@ -340,6 +344,8 @@ class BookingDetails {
       formattedDeliveryFee: json['formatted_delivery_fee'],
     );
   }
+
+  get statusPembayaran => null;
 
   Map<String, dynamic> toJson() {
     return {
@@ -517,6 +523,8 @@ class BarberSearch {
       createdAt: DateTime.parse(json['created_at']),
     );
   }
+
+  get profilePhoto => null;
 
   Map<String, dynamic> toJson() {
     return {

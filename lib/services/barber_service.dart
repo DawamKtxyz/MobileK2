@@ -165,6 +165,33 @@ class BarberService {
     }
   }
 
+Future<Map<String, dynamic>> deleteMultipleTimeSlots(List<int> scheduleIds) async {
+  try {
+    final url = _getUrl('barber/jadwal/multiple-delete');
+    final headers = await _getHeaders();
+
+    final body = {
+      'ids': scheduleIds,
+    };
+
+    final response = await http.delete(
+      Uri.parse(url),
+      headers: headers,
+      body: json.encode(body),
+    );
+
+    final responseData = json.decode(response.body);
+
+    if (response.statusCode == 200) {
+      return responseData;
+    } else {
+      throw Exception(responseData['message'] ?? 'Failed to delete multiple time slots');
+    }
+  } catch (e) {
+    throw Exception('Error deleting multiple time slots: $e');
+  }
+}
+
   // ========== Statistics ==========
 
   /// Get barber statistics
