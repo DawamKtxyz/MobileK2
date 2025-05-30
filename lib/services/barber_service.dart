@@ -249,6 +249,118 @@ class BarberService {
     }
   }
 
+   /// Get penggajian data for barber
+  Future<Map<String, dynamic>> getPenggajian({
+    String? status,
+    String? tanggalDari,
+    String? tanggalSampai,
+    int page = 1,
+    int perPage = 15,
+  }) async {
+    try {
+      final url = _getUrl('barber/penggajian');
+      final headers = await _getHeaders();
+
+      final queryParams = <String, String>{
+        'page': page.toString(),
+        'per_page': perPage.toString(),
+      };
+
+      if (status != null) queryParams['status'] = status;
+      if (tanggalDari != null) queryParams['tanggal_dari'] = tanggalDari;
+      if (tanggalSampai != null) queryParams['tanggal_sampai'] = tanggalSampai;
+
+      final uri = Uri.parse(url).replace(queryParameters: queryParams);
+      final response = await http.get(uri, headers: headers);
+
+      Constants.log('Penggajian API Response: ${response.statusCode}, ${response.body}');
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to get penggajian: ${response.statusCode}');
+      }
+    } catch (e) {
+      Constants.log('Error in getPenggajian: $e');
+      throw Exception('Error getting penggajian: $e');
+    }
+  }
+
+  /// Get penggajian statistics
+  Future<Map<String, dynamic>> getPenggajianStats() async {
+    try {
+      final url = _getUrl('barber/penggajian/stats');
+      final headers = await _getHeaders();
+
+      final response = await http.get(Uri.parse(url), headers: headers);
+
+      Constants.log('Penggajian Stats API Response: ${response.statusCode}, ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data == null) {
+          return {
+            'success': true,
+            'stats': {
+              'total_gaji_menanti': 0,
+              'total_gaji_diterima': 0,
+              'jumlah_transaksi_menanti': 0,
+              'jumlah_transaksi_selesai': 0,
+              'pendapatan_bulan_ini': 0,
+              'periode': 'Unknown',
+            }
+          };
+        }
+        return data;
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to get penggajian stats: ${response.statusCode}',
+          'stats': {
+            'total_gaji_menanti': 0,
+            'total_gaji_diterima': 0,
+            'jumlah_transaksi_menanti': 0,
+            'jumlah_transaksi_selesai': 0,
+            'pendapatan_bulan_ini': 0,
+            'periode': 'Unknown',
+          }
+        };
+      }
+    } catch (e) {
+      Constants.log('Error in getPenggajianStats: $e');
+      return {
+        'success': false,
+        'message': 'Error getting penggajian stats: $e',
+        'stats': {
+          'total_gaji_menanti': 0,
+          'total_gaji_diterima': 0,
+          'jumlah_transaksi_menanti': 0,
+          'jumlah_transaksi_selesai': 0,
+          'pendapatan_bulan_ini': 0,
+          'periode': 'Unknown',
+        }
+      };
+    }
+  }
+
+  /// Get penggajian detail
+  Future<Map<String, dynamic>> getPenggajianDetail(int penggajianId) async {
+    try {
+      final url = _getUrl('barber/penggajian/$penggajianId');
+      final headers = await _getHeaders();
+
+      final response = await http.get(Uri.parse(url), headers: headers);
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to get penggajian detail: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error getting penggajian detail: $e');
+    }
+  }
+
   // ========== Helper Methods ==========
 
   /// Generate time slots for a week

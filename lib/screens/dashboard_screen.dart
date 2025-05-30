@@ -1,24 +1,24 @@
-  import '../screens/direct_chat_screen.dart';
-  import '../utils/constants.dart';
-  import 'package:flutter/foundation.dart';
-  import 'package:flutter/material.dart';
-  import 'package:http/http.dart' as http;
-  import 'dart:convert';
-  import 'package:intl/intl.dart';
-  import 'package:shared_preferences/shared_preferences.dart';
-  import '../models/barber_model.dart';
-  import '../models/pelanggan_model.dart';
-  import '../models/booking_model.dart';
-  import '../services/auth_service_factory.dart';
-  import '../services/barber_service.dart';
-  import '../services/pelanggan_service.dart';
-  import 'login_screen.dart';
-  import 'edit_profile_screen.dart';
-  import '../screens/chat_list_screen.dart';
-  import '../screens/payment_screen.dart';
-  import '../models/chat_model.dart';
-  import '../screens/direct_chat_screen.dart';
+import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/barber_model.dart';
+import '../models/booking_model.dart';
+import '../models/pelanggan_model.dart';
+import '../models/penggajian_model.dart';
+import '../screens/chat_list_screen.dart';
+import '../screens/direct_chat_screen.dart';
+import '../screens/payment_screen.dart';
+import '../services/auth_service_factory.dart';
+import '../services/barber_service.dart';
+import '../services/pelanggan_service.dart';
+import '../utils/constants.dart';
+import 'edit_profile_screen.dart';
+import 'login_screen.dart';
 
   class DashboardScreen extends StatefulWidget {
     const DashboardScreen({Key? key}) : super(key: key);
@@ -88,7 +88,14 @@
     Map<String, List<Schedule>> _schedules = {};
     Map<String, dynamic>? _stats;
     
-    
+    // Variables untuk penggajian (tambahkan setelah variable yang sudah ada)
+List<Penggajian> _penggajianList = [];
+PenggajianStats? _penggajianStats;
+bool _isLoadingPenggajian = false;
+String _selectedPenggajianFilter = 'semua'; // 'semua', 'belum_lunas', 'lunas'
+int _currentPenggajianPage = 1;
+bool _hasMorePenggajian = true;
+
     // UI State
     bool _isLoadingData = false;
     String _searchQuery = '';
@@ -100,6 +107,452 @@
       super.initState();
       _loadUserData();
       _loadDarkModePreference();
+  }
+
+ Future<void> _loadPenggajianData() async {
+    try {
+      setState(() => _isLoadingPenggajian = true);
+      
+      // Load stats
+      final statsResult = await _barberService.getPenggajianStats();
+      if (statsResult['success'] == true && statsResult['stats'] != null) {
+        setState(() => _penggajianStats = PenggajianStats.fromJson(statsResult['stats']));
+      }
+      
+      // Load penggajian list
+      final penggajianResult = await _barberService.getPenggajian(
+        status: _selectedPenggajianFilter == 'semua' ? null : _selectedPenggajianFilter,
+        page: _currentPenggajianPage,
+      );
+      
+      if (penggajianResult['success'] == true && penggajianResult['data'] != null) {
+        final penggajianData = penggajianResult['data'] as List;
+        setState(() {
+          _penggajianList = penggajianData.map((item) => Penggajian.fromJson(item)).toList();
+        });
+        
+        // Update pagination info
+        if (penggajianResult['pagination'] != null) {
+          setState(() {
+            _hasMorePenggajian = penggajianResult['pagination']['has_more'] ?? false;
+          });
+        }
+      }
+      
+    } catch (e) {
+      print('Debug - Error loading penggajian data: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading penggajian data: $e')),
+      );
+    } finally {
+      setState(() => _isLoadingPenggajian = false);
+    }
+  }
+
+  Widget _buildPenggajianPage() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Penggajian',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              IconButton(
+                onPressed: _loadPenggajianData,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Stats cards
+          if (_penggajianStats != null) ...[
+            _buildPenggajianStats(),
+            const SizedBox(height: 24),
+          ],
+          
+          // Filter tabs
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                _buildFilterTab('semua', 'Semua'),
+                _buildFilterTab('belum_lunas', 'Menanti'),
+                _buildFilterTab('lunas', 'Dibayar'),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // Content
+          if (_isLoadingPenggajian)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32.0),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else if (_penggajianList.isEmpty)
+            _buildEmptyPenggajianState()
+          else
+            Column(
+              children: _penggajianList.map((penggajian) => _buildPenggajianCard(penggajian)).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPenggajianStats() {
+    if (_penggajianStats == null) return const SizedBox.shrink();
+    
+    return Column(
+      children: [
+        // Row pertama - gaji
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                'Gaji Menanti',
+                _penggajianStats!.formattedTotalGajiMenanti,
+                Icons.schedule,
+                Colors.orange,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildStatCard(
+                'Gaji Diterima',
+                _penggajianStats!.formattedTotalGajiDiterima,
+                Icons.check_circle,
+                Colors.green,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // Row kedua - transaksi
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                'Transaksi Menanti',
+                _penggajianStats!.jumlahTransaksiMenanti.toString(),
+                Icons.pending,
+                Colors.blue,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildStatCard(
+                'Transaksi Selesai',
+                _penggajianStats!.jumlahTransaksiSelesai.toString(),
+                Icons.done_all,
+                Colors.purple,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilterTab(String value, String label) {
+    final isSelected = _selectedPenggajianFilter == value;
+    
+    return Expanded(
+      child: GestureDetector(
+        onTap: () async {
+          setState(() {
+            _selectedPenggajianFilter = value;
+            _currentPenggajianPage = 1;
+          });
+          await _loadPenggajianData();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: isSelected ? [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1),
+                spreadRadius: 0,
+                blurRadius: 5,
+                offset: const Offset(0, 1),
+              ),
+            ] : null,
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected ? Colors.black : Colors.grey[600],
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyPenggajianState() {
+    String message;
+    String description;
+    IconData icon;
+    
+    switch (_selectedPenggajianFilter) {
+      case 'belum_lunas':
+        message = 'Belum ada gaji menanti';
+        description = 'Gaji yang belum dibayar akan muncul di sini';
+        icon = Icons.schedule;
+        break;
+      case 'lunas':
+        message = 'Belum ada gaji diterima';
+        description = 'Riwayat gaji yang sudah dibayar akan muncul di sini';
+        icon = Icons.check_circle;
+        break;
+      default:
+        message = 'Belum ada data penggajian';
+        description = 'Data penggajian akan muncul setelah ada transaksi yang selesai';
+        icon = Icons.account_balance_wallet;
+    }
+    
+    return Center(
+      child: Column(
+        children: [
+          const SizedBox(height: 32),
+          Icon(
+            icon,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            description,
+            style: TextStyle(
+              color: Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPenggajianCard(Penggajian penggajian) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 0,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showPenggajianDetails(penggajian),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header dengan status
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        penggajian.namaPelanggan,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _getPenggajianStatusColor(penggajian.status).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        penggajian.isLunas ? 'Dibayar' : 'Menanti',
+                        style: TextStyle(
+                          color: _getPenggajianStatusColor(penggajian.status),
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                
+                const SizedBox(height: 12),
+                
+                // Info tanggal
+                Row(
+                  children: [
+                    Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Pesanan: ${penggajian.formattedTanggalPesanan}',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+                
+                const SizedBox(height: 8),
+                
+                // Info jadwal jika ada
+                if (penggajian.tanggalJadwal != null && penggajian.jamJadwal != null) ...[
+                  Row(
+                    children: [
+                      Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Jadwal: ${penggajian.formattedJadwalLengkap}',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                
+                // Info financial
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Total Bayar',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          penggajian.formattedTotalBayar,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          'Gaji Anda',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          penggajian.formattedTotalGaji,
+                          style: TextStyle(
+                            color: Theme.of(context).primaryColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                
+                // Potongan jika ada
+                if (penggajian.potongan > 0) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.remove_circle_outline, size: 16, color: Colors.red[600]),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Potongan: ${penggajian.formattedPotongan}',
+                        style: TextStyle(
+                          color: Colors.red[600],
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getPenggajianStatusColor(String status) {
+    switch (status) {
+      case 'lunas':
+        return Colors.green;
+      case 'belum lunas':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  void _showPenggajianDetails(Penggajian penggajian) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _PenggajianDetailsBottomSheet(
+        penggajian: penggajian,
+        barberService: _barberService,
+      ),
+    );
   }
 
     Future<void> _loadUserData() async {
@@ -222,7 +675,8 @@
       } catch (statError) {
         print('Debug - Error loading stats data: $statError');
       }
-      
+      await _loadPenggajianData();
+
     } catch (e) {
       print('Debug - General error in _loadBarberData: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -605,6 +1059,7 @@
             _buildHomePage(),
             _buildBookingsPage(),
             _buildChatPage(), // Add chat page
+             if (_userType == UserType.barber) _buildPenggajianPage(),
             _buildProfilePage(),
           ],
         ),
@@ -618,49 +1073,55 @@
   }
 
     Widget _buildBottomNavigationBar() {
-    return Container(
-      decoration: BoxDecoration(
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.2),
-            spreadRadius: 0,
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        selectedItemColor: Theme.of(context).primaryColor,
-        unselectedItemColor: Colors.grey,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(_userType == UserType.barber ? Icons.home : Icons.search),
-            label: _userType == UserType.barber ? 'Home' : 'Cari',
-          ),
+  return Container(
+    decoration: BoxDecoration(
+      boxShadow: [
+        BoxShadow(
+          color: Colors.grey.withOpacity(0.2),
+          spreadRadius: 0,
+          blurRadius: 10,
+          offset: const Offset(0, -2),
+        ),
+      ],
+    ),
+    child: BottomNavigationBar(
+      type: BottomNavigationBarType.fixed,
+      currentIndex: _selectedIndex,
+      onTap: (index) {
+        setState(() {
+          _selectedIndex = index;
+        });
+      },
+      selectedItemColor: Theme.of(context).primaryColor,
+      unselectedItemColor: Colors.grey,
+      selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
+      items: [
+        BottomNavigationBarItem(
+          icon: Icon(_userType == UserType.barber ? Icons.home : Icons.search),
+          label: _userType == UserType.barber ? 'Home' : 'Cari',
+        ),
+        const BottomNavigationBarItem(
+          icon: Icon(Icons.calendar_today),
+          label: 'Booking',
+        ),
+        const BottomNavigationBarItem(
+          icon: Icon(Icons.chat_bubble_outline),
+          label: 'Chat',
+        ),
+        // Tambahkan tab Gaji khusus untuk barber
+        if (_userType == UserType.barber)
           const BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
-            label: 'Booking',
+            icon: Icon(Icons.account_balance_wallet),
+            label: 'Gaji',
           ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            label: 'Chat',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profil',
-          ),
-        ],
-      ),
-    );
-  }
+        BottomNavigationBarItem(
+          icon: const Icon(Icons.person),
+          label: 'Profil',
+        ),
+      ],
+    ),
+  );
+}
 
     Widget _buildHomePage() {
     return SingleChildScrollView(
@@ -4336,6 +4797,7 @@
     }
   }
 
+
   // Tambahkan kelas ini di bagian paling bawah file, setelah semua kelas widget lainnya
   class _BulkAddTimeSlotsDialog extends StatefulWidget {
     final Function(List<Map<String, String>>) onAddSlots;
@@ -4646,3 +5108,468 @@
       widget.onAddSlots(slots);
     }
   }
+
+  class _PenggajianDetailsBottomSheet extends StatefulWidget {
+  final Penggajian penggajian;
+  final BarberService barberService;
+
+  const _PenggajianDetailsBottomSheet({
+    required this.penggajian,
+    required this.barberService,
+  });
+
+  @override
+  State<_PenggajianDetailsBottomSheet> createState() => __PenggajianDetailsBottomSheetState();
+}
+
+class __PenggajianDetailsBottomSheetState extends State<_PenggajianDetailsBottomSheet> {
+  Map<String, dynamic>? _detailData;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDetail();
+  }
+
+  Future<void> _loadDetail() async {
+    try {
+      final result = await widget.barberService.getPenggajianDetail(widget.penggajian.idGaji);
+      if (result['success'] == true && result['data'] != null) {
+        setState(() {
+          _detailData = result['data'];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading detail: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.8,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) {
+          return SingleChildScrollView(
+            controller: scrollController,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Drag handle
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 24),
+                
+                // Header
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Detail Penggajian',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          Text(
+                            'ID: ${widget.penggajian.idGaji}',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(widget.penggajian.status).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        widget.penggajian.isLunas ? 'Sudah Dibayar' : 'Menanti Pembayaran',
+                        style: TextStyle(
+                          color: _getStatusColor(widget.penggajian.status),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                
+                const SizedBox(height: 24),
+                
+                if (_isLoading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32.0),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else ...[
+                  // Info Pelanggan
+                  _buildInfoSection(
+                    'Informasi Pelanggan',
+                    [
+                      _buildInfoRow(Icons.person, 'Nama', widget.penggajian.namaPelanggan),
+                      _buildInfoRow(Icons.tag, 'ID Pelanggan', '#${widget.penggajian.idPelanggan}'),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // Info Pesanan
+                  _buildInfoSection(
+                    'Informasi Pesanan',
+                    [
+                      _buildInfoRow(Icons.receipt, 'ID Pesanan', '#${widget.penggajian.idPesanan}'),
+                      _buildInfoRow(Icons.calendar_today, 'Tanggal Pesanan', widget.penggajian.formattedTanggalPesanan),
+                      if (widget.penggajian.tanggalJadwal != null && widget.penggajian.jamJadwal != null)
+                        _buildInfoRow(Icons.schedule, 'Jadwal Layanan', widget.penggajian.formattedJadwalLengkap),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // Info Keuangan
+                  _buildInfoSection(
+                    'Rincian Keuangan',
+                    [
+                      _buildInfoRow(Icons.attach_money, 'Total Pembayaran', widget.penggajian.formattedTotalBayar),
+                      if (widget.penggajian.potongan > 0)
+                        _buildInfoRow(Icons.remove_circle, 'Potongan', widget.penggajian.formattedPotongan, 
+                            isNegative: true),
+                      _buildInfoRow(Icons.account_balance_wallet, 'Gaji Anda', widget.penggajian.formattedTotalGaji,
+                          isHighlight: true),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // Info Rekening
+                  if (widget.penggajian.rekeningBarber.isNotEmpty) ...[
+                    _buildInfoSection(
+                      'Informasi Rekening',
+                      [
+                        _buildInfoRow(Icons.account_balance, 'Rekening Tujuan', widget.penggajian.rekeningBarber),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 20),
+                  ],
+                  
+                  // Bukti Transfer (jika ada)
+                  if (widget.penggajian.buktiTransfer != null && widget.penggajian.buktiTransfer!.isNotEmpty) ...[
+                    _buildInfoSection(
+                      'Bukti Transfer',
+                      [
+                        _buildBuktiTransferSection(),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 20),
+                  ],
+                  
+                  // Status dan Waktu
+                  _buildInfoSection(
+                    'Status Pembayaran',
+                    [
+                      _buildInfoRow(Icons.info, 'Status', 
+                          widget.penggajian.isLunas ? 'Sudah Dibayar' : 'Menanti Pembayaran'),
+                      if (widget.penggajian.createdAt != null)
+                        _buildInfoRow(Icons.access_time, 'Dibuat', 
+                            _formatDateTime(widget.penggajian.createdAt!)),
+                      if (widget.penggajian.updatedAt != null && widget.penggajian.isLunas)
+                        _buildInfoRow(Icons.check_circle, 'Dibayar', 
+                            _formatDateTime(widget.penggajian.updatedAt!)),
+                    ],
+                  ),
+                ],
+                
+                const SizedBox(height: 24),
+                
+                // Action button untuk refresh
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // Callback untuk refresh data di parent
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Tutup'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 20),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildInfoSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Column(
+            children: children,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value, {bool isNegative = false, bool isHighlight = false}) {
+    Color? valueColor;
+    if (isNegative) valueColor = Colors.red[600];
+    if (isHighlight) valueColor = Theme.of(context).primaryColor;
+    
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: Colors.grey[600]),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontWeight: isHighlight ? FontWeight.bold : FontWeight.w500,
+                    fontSize: isHighlight ? 16 : 14,
+                    color: valueColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBuktiTransferSection() {
+    if (_detailData?['bukti_transfer_url'] == null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          children: [
+            Icon(Icons.image, size: 20, color: Colors.grey[600]),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Bukti transfer tidak tersedia',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.image, size: 20, color: Colors.grey[600]),
+              const SizedBox(width: 12),
+              const Text(
+                'Bukti Transfer',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            height: 200,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                _detailData!['bukti_transfer_url'],
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Center(
+                    child: CircularProgressIndicator(
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded /
+                              loadingProgress.expectedTotalBytes!
+                          : null,
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    color: Colors.grey[100],
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error, color: Colors.grey[400], size: 48),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Gagal memuat gambar',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                _showFullscreenImage(_detailData!['bukti_transfer_url']);
+              },
+              icon: const Icon(Icons.fullscreen, size: 16),
+              label: const Text('Lihat Ukuran Penuh'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFullscreenImage(String imageUrl) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+            title: const Text(
+              'Bukti Transfer',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error, color: Colors.white, size: 64),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Gagal memuat gambar',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'lunas':
+        return Colors.green;
+      case 'belum lunas':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+      'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des'
+    ];
+    
+    final time = '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    return '${dateTime.day} ${months[dateTime.month - 1]} ${dateTime.year} • $time';
+  }
+}
