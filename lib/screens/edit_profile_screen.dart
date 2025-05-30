@@ -142,90 +142,97 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<String?> _uploadProfileImage() async {
-    try {
-      // Fix the URL being used
-      String baseUrl = Constants.baseUrl;
-      if (baseUrl.endsWith('/api')) {
-        baseUrl = baseUrl.substring(0, baseUrl.length - 4);
-      }
-      
-      final url = widget.userType == UserType.barber
-          ? '$baseUrl/api/barber/upload-profile-photo'
-          : '$baseUrl/api/pelanggan/upload-profile-photo';
-      
-      final prefs = await SharedPreferences.getInstance();
-      final token = widget.userType == UserType.barber 
-          ? prefs.getString(Constants.keyBarberToken)
-          : prefs.getString(Constants.keyPelangganToken);
-      
-      if (token == null) {
-        throw Exception('Token tidak ditemukan');
-      }
+  try {
+    // Fix the URL being used - gunakan Constants.baseUrl
+    String baseUrl = Constants.baseUrl;
+    if (baseUrl.endsWith('/api')) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+    }
+    
+    final url = widget.userType == UserType.barber
+        ? '$baseUrl/api/barber/upload-profile-photo'
+        : '$baseUrl/api/pelanggan/upload-profile-photo';
+    
+    final prefs = await SharedPreferences.getInstance();
+    final token = widget.userType == UserType.barber 
+        ? prefs.getString(Constants.keyBarberToken)
+        : prefs.getString(Constants.keyPelangganToken);
+    
+    if (token == null) {
+      throw Exception('Token tidak ditemukan');
+    }
 
-      if (kIsWeb) {
-        // For web: send as JSON with base64
-        if (_webImageData == null) return null;
-        
-        final response = await http.post(
-          Uri.parse(url),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Authorization': 'Bearer $token',
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-          body: json.encode({
-            'profile_photo': _webImageData,
-            'file_name': 'profile_image.jpg',
-          }),
-        );
-        
-        final responseBody = json.decode(response.body);
-        
-        if (response.statusCode == 200 && responseBody['success'] == true) {
-          return responseBody['image_path'];
-        } else {
-          throw Exception(responseBody['message'] ?? 'Failed to upload image');
-        }
-      } else {
-        // For mobile: send as multipart/form-data
-        if (_selectedImage == null) return null;
-        
-        var request = http.MultipartRequest('POST', Uri.parse(url));
-        
-        // Add headers
-        request.headers.addAll({
+    Constants.log('Uploading to URL: $url');
+    Constants.log('Using token: ${token.substring(0, 10)}...');
+
+    if (kIsWeb) {
+      // For web: send as JSON with base64
+      if (_webImageData == null) return null;
+      
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
           'X-Requested-With': 'XMLHttpRequest',
-        });
-        
-        // Add file
-        request.files.add(await http.MultipartFile.fromPath(
-          'profile_photo',
-          _selectedImage!.path,
-        ));
-        
-        // Send request
-        var streamedResponse = await request.send();
-        var response = await http.Response.fromStream(streamedResponse);
-        
-        final responseBody = json.decode(response.body);
-        
-        if (response.statusCode == 200 && responseBody['success'] == true) {
-          return responseBody['image_path'];
-        } else {
-          throw Exception(responseBody['message'] ?? 'Failed to upload image');
-        }
-      }
-    } catch (e) {
-      print('Error uploading image: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error uploading image: $e')),
+        },
+        body: json.encode({
+          'profile_photo': _webImageData,
+          'file_name': 'profile_image.jpg',
+        }),
       );
-      return null;
+      
+      Constants.log('Upload response: ${response.statusCode}, ${response.body}');
+      
+      final responseBody = json.decode(response.body);
+      
+      if (response.statusCode == 200 && responseBody['success'] == true) {
+        return responseBody['image_path'];
+      } else {
+        throw Exception(responseBody['message'] ?? 'Failed to upload image');
+      }
+    } else {
+      // For mobile: send as multipart/form-data
+      if (_selectedImage == null) return null;
+      
+      var request = http.MultipartRequest('POST', Uri.parse(url));
+      
+      // Add headers
+      request.headers.addAll({
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+        'X-Requested-With': 'XMLHttpRequest',
+      });
+      
+      // Add file
+      request.files.add(await http.MultipartFile.fromPath(
+        'profile_photo',
+        _selectedImage!.path,
+      ));
+      
+      // Send request
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+      
+      Constants.log('Upload response: ${response.statusCode}, ${response.body}');
+      
+      final responseBody = json.decode(response.body);
+      
+      if (response.statusCode == 200 && responseBody['success'] == true) {
+        return responseBody['image_path'];
+      } else {
+        throw Exception(responseBody['message'] ?? 'Failed to upload image');
+      }
     }
+  } catch (e) {
+    Constants.log('Error uploading image: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error uploading image: $e')),
+    );
+    return null;
   }
+}
 
   Future<void> _updateProfile() async {
     if (!_formKey.currentState!.validate()) {
@@ -321,144 +328,150 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Future<Map<String, dynamic>> _updatePelangganProfile(Map<String, dynamic> data) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(Constants.keyPelangganToken);
-    
-    if (token == null) {
-      throw Exception('Token tidak ditemukan');
-    }
-
-    // Fix URL base path
-    String baseUrl = Constants.baseUrl;
-    if (baseUrl.endsWith('/api')) {
-      baseUrl = baseUrl.substring(0, baseUrl.length - 4);
-    }
-
-    // Call API directly using http
-    final url = '$baseUrl/api/pelanggan/profile/update';
-    final response = await http.post(
-      Uri.parse(url),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $token',
-        'X-Requested-With': 'XMLHttpRequest',
-      },
-      body: json.encode(data),
-    );
-
-    final responseBody = json.decode(response.body);
-
-    if (response.statusCode == 200 && responseBody['success'] == true) {
-      return responseBody;
-    } else {
-      throw Exception(responseBody['message'] ?? 'Gagal memperbarui profil');
-    }
+ Future<Map<String, dynamic>> _updatePelangganProfile(Map<String, dynamic> data) async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString(Constants.keyPelangganToken);
+  
+  if (token == null) {
+    throw Exception('Token tidak ditemukan');
   }
+
+  // Fix URL base path - gunakan Constants.baseUrl
+  String baseUrl = Constants.baseUrl;
+  if (baseUrl.endsWith('/api')) {
+    baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+  }
+
+  // Call API directly using http
+  final url = '$baseUrl/api/pelanggan/profile/update';
+  
+  Constants.log('Updating pelanggan profile to URL: $url');
+  Constants.log('Update data: $data');
+  
+  final response = await http.post(
+    Uri.parse(url),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $token',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    body: json.encode(data),
+  );
+
+  Constants.log('Update response: ${response.statusCode}, ${response.body}');
+
+  final responseBody = json.decode(response.body);
+
+  if (response.statusCode == 200 && responseBody['success'] == true) {
+    return responseBody;
+  } else {
+    throw Exception(responseBody['message'] ?? 'Gagal memperbarui profil');
+  }
+}
 
   Future<Map<String, dynamic>> _updateBarberProfile(Map<String, dynamic> data) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(Constants.keyBarberToken);
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString(Constants.keyBarberToken);
+  
+  if (token == null) {
+    throw Exception('Token tidak ditemukan');
+  }
+
+  // Fix URL base path - gunakan Constants.baseUrl
+  String baseUrl = Constants.baseUrl;
+  if (baseUrl.endsWith('/api')) {
+    baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+  }
+
+  // Pastikan harga dalam format yang benar
+  if (data.containsKey('harga')) {
+    Constants.log('Sending harga to API: ${data['harga']}');
     
-    if (token == null) {
-      throw Exception('Token tidak ditemukan');
-    }
-
-    // Fix URL base path
-    String baseUrl = Constants.baseUrl;
-    if (baseUrl.endsWith('/api')) {
-      baseUrl = baseUrl.substring(0, baseUrl.length - 4);
-    }
-
-    // Pastikan harga dalam format yang benar
-    if (data.containsKey('harga')) {
-      // Log untuk debugging
-      print('Sending harga to API: ${data['harga']}');
-      
-      // Pastikan harga adalah integer yang valid
-      if (data['harga'] is String) {
-        data['harga'] = int.tryParse(data['harga']) ?? widget.userData.harga.toInt();
-      }
-    }
-
-    // Call API
-    final url = '$baseUrl/api/barber/update-profile';
-    print('Using URL: $url'); // Debug - check the actual URL
-    
-    final response = await http.post(
-      Uri.parse(url),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $token',
-        'X-Requested-With': 'XMLHttpRequest',
-      },
-      body: json.encode(data),
-    );
-
-    final responseBody = json.decode(response.body);
-    print('Profile update response: $responseBody'); // Debug log
-
-    if (response.statusCode == 200 && responseBody['success'] == true) {
-      // Pastikan barber data lengkap
-      if (responseBody['barber'] != null) {
-        // Pastikan harga tersedia di respons
-        var barberData = responseBody['barber'];
-        if (barberData['harga'] == null) {
-          barberData['harga'] = data['harga'] ?? widget.userData.harga;
-        }
-        responseBody['barber'] = barberData;
-      }
-      
-      return responseBody;
-    } else {
-      throw Exception(responseBody['message'] ?? 'Gagal memperbarui profil');
+    // Pastikan harga adalah integer yang valid
+    if (data['harga'] is String) {
+      data['harga'] = int.tryParse(data['harga']) ?? widget.userData.harga.toInt();
     }
   }
+
+  // Call API
+  final url = '$baseUrl/api/barber/update-profile';
+  
+  Constants.log('Updating barber profile to URL: $url');
+  Constants.log('Update data: $data');
+  
+  final response = await http.post(
+    Uri.parse(url),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $token',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    body: json.encode(data),
+  );
+
+  Constants.log('Update response: ${response.statusCode}, ${response.body}');
+
+  final responseBody = json.decode(response.body);
+
+  if (response.statusCode == 200 && responseBody['success'] == true) {
+    // Pastikan barber data lengkap
+    if (responseBody['barber'] != null) {
+      // Pastikan harga tersedia di respons
+      var barberData = responseBody['barber'];
+      if (barberData['harga'] == null) {
+        barberData['harga'] = data['harga'] ?? widget.userData.harga;
+      }
+      responseBody['barber'] = barberData;
+    }
+    
+    return responseBody;
+  } else {
+    throw Exception(responseBody['message'] ?? 'Gagal memperbarui profil');
+  }
+}
 
   Future<void> _updateLocalStorage(Map<String, dynamic> result) async {
-    final prefs = await SharedPreferences.getInstance();
-      
-    // Debug output untuk melihat data yang diterima
-    print('Result data for storage update: $result');
+  final prefs = await SharedPreferences.getInstance();
     
-    if (widget.userType == UserType.pelanggan && result['pelanggan'] != null) {
-      // Update 'pelanggan' key dengan data lengkap
-      await prefs.setString('pelanggan', jsonEncode(result['pelanggan']));
-    } else if (widget.userType == UserType.barber && result['barber'] != null) {
-      // Pastikan semua field yang diperlukan ada di data barber
-      var barberData = result['barber'];
-      
-      // Pastikan field harga tersedia dan diparse dengan benar
-      if (barberData['harga'] == null) {
-        // Gunakan harga dari form jika tidak ada dari server
-        barberData['harga'] = double.tryParse(_hargaController.text) ?? widget.userData.harga;
-      }
-      
-      await prefs.setString('barber', jsonEncode(barberData));
-      
-      // Debug output
-      print('Updated barber data in storage: $barberData');
+  // Debug output untuk melihat data yang diterima
+  Constants.log('Result data for storage update: $result');
+  
+  if (widget.userType == UserType.pelanggan && result['pelanggan'] != null) {
+    // Update 'pelanggan' key dengan data lengkap
+    await prefs.setString(Constants.keyPelangganData, jsonEncode(result['pelanggan']));
+    Constants.log('Updated pelanggan data in storage');
+  } else if (widget.userType == UserType.barber && result['barber'] != null) {
+    // Pastikan semua field yang diperlukan ada di data barber
+    var barberData = result['barber'];
+    
+    // Pastikan field harga tersedia dan diparse dengan benar
+    if (barberData['harga'] == null) {
+      // Gunakan harga dari form jika tidak ada dari server
+      barberData['harga'] = double.tryParse(_hargaController.text) ?? widget.userData.harga;
     }
+    
+    await prefs.setString(Constants.keyBarberData, jsonEncode(barberData));
+    Constants.log('Updated barber data in storage: $barberData');
   }
+}
 
   // Helper method to determine which profile image to display
   ImageProvider? _getProfileImage() {
-    if (_selectedImage != null) {
-      return FileImage(_selectedImage!);
-    } else if (_webImageData != null) {
-      return MemoryImage(base64Decode(_webImageData!));
-    } else if (widget.userData.profilePhoto != null) {
-      // Use the image URL from the server
-      String baseUrl = Constants.baseUrl;
-      if (baseUrl.endsWith('/api')) {
-        baseUrl = baseUrl.substring(0, baseUrl.length - 4);
-      }
-      return NetworkImage('$baseUrl/storage/${widget.userData.profilePhoto}');
+  if (_selectedImage != null) {
+    return FileImage(_selectedImage!);
+  } else if (_webImageData != null) {
+    return MemoryImage(base64Decode(_webImageData!));
+  } else if (widget.userData.profilePhoto != null) {
+    // Gunakan Constants.buildProfilePhotoUrl untuk konsistensi
+    final photoUrl = Constants.buildProfilePhotoUrl(widget.userData.profilePhoto);
+    if (photoUrl != null) {
+      return NetworkImage(photoUrl);
     }
-    return null;
   }
+  return null;
+}
 
   bool _shouldShowDefaultIcon() {
     return _selectedImage == null && _webImageData == null && widget.userData.profilePhoto == null;

@@ -6,7 +6,7 @@ class Pelanggan {
   final String? alamat;
   final String? tanggalLahir;
   final String? apiToken;
-  final String? profilePhoto; // Add this field
+  final String? profilePhoto;
   final String? createdAt;
   final String? updatedAt;
 
@@ -18,7 +18,7 @@ class Pelanggan {
     this.alamat,
     this.tanggalLahir,
     this.apiToken,
-    this.profilePhoto, // Initialize it
+    this.profilePhoto,
     this.createdAt,
     this.updatedAt,
   });
@@ -32,7 +32,7 @@ class Pelanggan {
       alamat: json['alamat'],
       tanggalLahir: json['tanggal_lahir'],
       apiToken: json['api_token'],
-      profilePhoto: json['profile_photo'], // Parse from JSON
+      profilePhoto: json['profile_photo'],
       createdAt: json['created_at'],
       updatedAt: json['updated_at'],
     );
@@ -47,7 +47,7 @@ class Pelanggan {
       'alamat': alamat,
       'tanggal_lahir': tanggalLahir,
       'api_token': apiToken,
-      'profile_photo': profilePhoto, // Include in JSON
+      'profile_photo': profilePhoto,
       'created_at': createdAt,
       'updated_at': updatedAt,
     };

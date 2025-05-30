@@ -6,7 +6,11 @@ class Barber {
   final String? spesialisasi;
   final double harga;
   final String? sertifikat;
-  final String? profilePhoto; // Add this field
+  final String? profilePhoto;
+  final double? persentaseKomisi;
+  final String? rekeningBarber;
+  final String? createdAt;
+  final String? updatedAt;
 
   Barber({
     required this.id,
@@ -16,7 +20,11 @@ class Barber {
     this.spesialisasi,
     required this.harga,
     this.sertifikat,
-    this.profilePhoto, // Initialize it
+    this.profilePhoto,
+    this.persentaseKomisi,
+    this.rekeningBarber,
+    this.createdAt,
+    this.updatedAt,
   });
 
   factory Barber.fromJson(Map<String, dynamic> json) {
@@ -28,7 +36,15 @@ class Barber {
       spesialisasi: json['spesialisasi'],
       harga: json['harga'] is String ? double.parse(json['harga']) : json['harga'].toDouble(),
       sertifikat: json['sertifikat'],
-      profilePhoto: json['profile_photo'], // Parse from JSON
+      profilePhoto: json['profile_photo'],
+      persentaseKomisi: json['persentase_komisi'] != null 
+          ? (json['persentase_komisi'] is String 
+              ? double.parse(json['persentase_komisi']) 
+              : json['persentase_komisi'].toDouble())
+          : null,
+      rekeningBarber: json['rekening_barber'],
+      createdAt: json['created_at'],
+      updatedAt: json['updated_at'],
     );
   }
 
@@ -41,7 +57,57 @@ class Barber {
       'spesialisasi': spesialisasi,
       'harga': harga,
       'sertifikat': sertifikat,
-      'profile_photo': profilePhoto, // Include in JSON
+      'profile_photo': profilePhoto,
+      'persentase_komisi': persentaseKomisi,
+      'rekening_barber': rekeningBarber,
+      'created_at': createdAt,
+      'updated_at': updatedAt,
     };
+  }
+}
+
+// BarberSearch class untuk search results
+class BarberCari {
+  final int id;
+  final String nama;
+  final String email;
+  final String? telepon;
+  final String? spesialisasi;
+  final double harga;
+  final String? profilePhoto;
+  final double rating;
+  final int totalReviews;
+  final String formattedHarga;
+
+  BarberCari({
+    required this.id,
+    required this.nama,
+    required this.email,
+    this.telepon,
+    this.spesialisasi,
+    required this.harga,
+    this.profilePhoto,
+    required this.rating,
+    required this.totalReviews,
+    required this.formattedHarga,
+  });
+
+  factory BarberCari.fromJson(Map<String, dynamic> json) {
+    return BarberCari(
+      id: json['id'],
+      nama: json['nama'],
+      email: json['email'],
+      telepon: json['telepon'],
+      spesialisasi: json['spesialisasi'],
+      harga: json['harga'] is String ? double.parse(json['harga']) : json['harga'].toDouble(),
+      profilePhoto: json['profile_photo'],
+      rating: json['rating'] != null 
+          ? (json['rating'] is String 
+              ? double.parse(json['rating']) 
+              : json['rating'].toDouble())
+          : 0.0,
+      totalReviews: json['total_reviews'] ?? 0,
+      formattedHarga: json['formatted_harga'] ?? 'Rp ${json['harga'] ?? 0}',
+    );
   }
 }

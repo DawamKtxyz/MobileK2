@@ -1,16 +1,33 @@
 class Constants {
-  // static const String baseUrl = 'http://localhost:8000/api';
-  // static const String baseUrl = 'http://192.168.1.8:8000/api';
-  // static const String baseUrl = 'http://10.0.2.2:8000/api';
+  // Base URLs - gunakan localhost untuk development
   static const String baseUrl = 'http://localhost:8000/api';
   static const String storageUrl = 'http://localhost:8000/storage';
+  
+  // Alternative URLs untuk testing di device berbeda
+  // static const String baseUrl = 'http://192.168.1.11:8000/api';
+  // static const String storageUrl = 'http://192.168.1.11:8000/storage';
+  
   // Atau jika menggunakan emulator Android:
   // static const String baseUrl = 'http://10.0.2.2:8000/api';
   // static const String storageUrl = 'http://10.0.2.2:8000/storage';
 
- static String buildStorageUrl(String path) {
+  /// Build storage URL dengan konsistensi
+  static String buildStorageUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
     if (path.startsWith('http')) return path;
+    
+    // Remove leading slash if exists
+    if (path.startsWith('/')) {
+      path = path.substring(1);
+    }
+    
     return '$storageUrl/$path';
+  }
+
+  /// Build profile photo URL specifically
+  static String? buildProfilePhotoUrl(String? photoPath) {
+    if (photoPath == null || photoPath.isEmpty) return null;
+    return buildStorageUrl(photoPath);
   }
 
   // Headers untuk request

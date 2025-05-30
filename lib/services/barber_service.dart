@@ -16,10 +16,10 @@ class BarberService {
     }
   }
 
-  // Get authorization headers
+  // Get authorization headers - FIXED: Use correct token key
   Future<Map<String, String>> _getHeaders() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = prefs.getString(Constants.keyBarberToken); // Use constant for consistency
     
     return {
       'Content-Type': 'application/json',
@@ -165,53 +165,66 @@ class BarberService {
     }
   }
 
-Future<Map<String, dynamic>> deleteMultipleTimeSlots(List<int> scheduleIds) async {
-  try {
-    final url = _getUrl('barber/jadwal/multiple-delete');
-    final headers = await _getHeaders();
+  Future<Map<String, dynamic>> deleteMultipleTimeSlots(List<int> scheduleIds) async {
+    try {
+      final url = _getUrl('barber/jadwal/multiple-delete');
+      final headers = await _getHeaders();
 
-    final body = {
-      'ids': scheduleIds,
-    };
+      final body = {
+        'ids': scheduleIds,
+      };
 
-    final response = await http.delete(
-      Uri.parse(url),
-      headers: headers,
-      body: json.encode(body),
-    );
+      final response = await http.delete(
+        Uri.parse(url),
+        headers: headers,
+        body: json.encode(body),
+      );
 
-    final responseData = json.decode(response.body);
+      final responseData = json.decode(response.body);
 
-    if (response.statusCode == 200) {
-      return responseData;
-    } else {
-      throw Exception(responseData['message'] ?? 'Failed to delete multiple time slots');
+      if (response.statusCode == 200) {
+        return responseData;
+      } else {
+        throw Exception(responseData['message'] ?? 'Failed to delete multiple time slots');
+      }
+    } catch (e) {
+      throw Exception('Error deleting multiple time slots: $e');
     }
-  } catch (e) {
-    throw Exception('Error deleting multiple time slots: $e');
   }
-}
 
   // ========== Statistics ==========
 
   /// Get barber statistics
- // Di barber_service.dart, pada method getStats
-Future<Map<String, dynamic>> getStats(int barberId) async {
-  try {
-    final url = _getUrl('barber/stats/$barberId');
-    final headers = await _getHeaders();
+  Future<Map<String, dynamic>> getStats(int barberId) async {
+    try {
+      final url = _getUrl('barber/stats/$barberId');
+      final headers = await _getHeaders();
 
-    final response = await http.get(Uri.parse(url), headers: headers);
-    
-    // Log response untuk debugging
-    print('Debug - Stats API Raw Response: ${response.statusCode}, ${response.body}');
+      final response = await http.get(Uri.parse(url), headers: headers);
+      
+      // Log response untuk debugging
+      Constants.log('Stats API Raw Response: ${response.statusCode}, ${response.body}');
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      // Pengecekan dan normalisasi data
-      if (data == null) {
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        // Pengecekan dan normalisasi data
+        if (data == null) {
+          return {
+            'success': true,
+            'stats': {
+              'total_bookings_today': 0,
+              'available_slots_today': 0,
+              'total_bookings_this_month': 0,
+              'formatted_revenue_this_month': 'Rp 0'
+            }
+          };
+        }
+        return data;
+      } else {
+        // Handle non-success status code
         return {
-          'success': true,
+          'success': false, 
+          'message': 'Failed to get stats: ${response.statusCode}',
           'stats': {
             'total_bookings_today': 0,
             'available_slots_today': 0,
@@ -220,12 +233,12 @@ Future<Map<String, dynamic>> getStats(int barberId) async {
           }
         };
       }
-      return data;
-    } else {
-      // Handle non-success status code
+    } catch (e) {
+      // Mengembalikan data default jika terjadi error
+      Constants.log('Error in getStats service: $e');
       return {
-        'success': false, 
-        'message': 'Failed to get stats: ${response.statusCode}',
+        'success': false,
+        'message': 'Error getting stats: $e',
         'stats': {
           'total_bookings_today': 0,
           'available_slots_today': 0,
@@ -234,21 +247,7 @@ Future<Map<String, dynamic>> getStats(int barberId) async {
         }
       };
     }
-  } catch (e) {
-    // Mengembalikan data default jika terjadi error
-    print('Debug - Error in getStats service: $e');
-    return {
-      'success': false,
-      'message': 'Error getting stats: $e',
-      'stats': {
-        'total_bookings_today': 0,
-        'available_slots_today': 0,
-        'total_bookings_this_month': 0,
-        'formatted_revenue_this_month': 'Rp 0'
-      }
-    };
   }
-}
 
   // ========== Helper Methods ==========
 
