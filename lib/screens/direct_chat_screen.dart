@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/chat_service.dart';
 import '../models/chat_model.dart';
 import '../utils/constants.dart';
 
 class DirectChatScreen extends StatefulWidget {
-  final int barberId;
-  final String barberName;
-  final String? barberPhoto;
-  final String? barberSpesialisasi;
+  final int userId;
+  final String userName;
+  final String? userPhoto;
+  final String? userSpesialisasi;
+  final String? userType; // Added userType parameter
 
   const DirectChatScreen({
     Key? key,
-    required this.barberId,
-    required this.barberName,
-    this.barberPhoto,
-    this.barberSpesialisasi,
+    required this.userId,
+    required this.userName,
+    this.userPhoto,
+    this.userSpesialisasi,
+    this.userType,
   }) : super(key: key);
 
   @override
@@ -30,10 +33,19 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
   int? _chatId;
   bool _isLoading = true;
   bool _isSending = false;
+  String? _currentUserType;
 
   @override
   void initState() {
     super.initState();
+    _loadUserType();
+  }
+
+  Future<void> _loadUserType() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUserType = prefs.getString('user_type');
+    });
     _loadOrCreateChat();
   }
 
@@ -48,9 +60,9 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     try {
       setState(() => _isLoading = true);
       
-      final result = await _chatService.getOrCreateDirectChat(widget.barberId);
+      final result = await _chatService.getOrCreateDirectChat(widget.userId);
       
-      if (result['success']) {
+      if (result['success'] == true) {
         final chat = result['chat'];
         final messagesList = chat['messages'] as List;
         
@@ -60,8 +72,11 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
         });
         
         _scrollToBottom();
+      } else {
+        throw Exception(result['message'] ?? 'Failed to load chat');
       }
     } catch (e) {
+      print('Error loading chat: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error loading chat: $e')),
       );
@@ -83,7 +98,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
         message: text,
       );
 
-      if (result['success']) {
+      if (result['success'] == true) {
         // Add message to local list
         final messageData = result['data'];
         final newMessage = DirectChatMessage.fromJson(messageData);
@@ -93,8 +108,11 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
         });
         
         _scrollToBottom();
+      } else {
+        throw Exception(result['message'] ?? 'Failed to send message');
       }
     } catch (e) {
+      print('Error sending message: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error sending message: $e')),
       );
@@ -119,6 +137,8 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isOtherUserBarber = widget.userType == 'barber' || _currentUserType == 'pelanggan';
+    
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -126,12 +146,12 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
             CircleAvatar(
               radius: 16,
               backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
-              backgroundImage: widget.barberPhoto != null
-                  ? NetworkImage(_getProfilePhotoUrl(widget.barberPhoto!))
+              backgroundImage: widget.userPhoto != null
+                  ? NetworkImage(_getProfilePhotoUrl(widget.userPhoto!))
                   : null,
-              child: widget.barberPhoto == null
+              child: widget.userPhoto == null
                   ? Icon(
-                      Icons.content_cut,
+                      isOtherUserBarber ? Icons.content_cut : Icons.person,
                       size: 16,
                       color: Theme.of(context).primaryColor,
                     )
@@ -143,12 +163,12 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.barberName,
+                    widget.userName,
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                  if (widget.barberSpesialisasi != null)
+                  if (widget.userSpesialisasi != null)
                     Text(
-                      widget.barberSpesialisasi!,
+                      widget.userSpesialisasi!,
                       style: const TextStyle(fontSize: 12),
                     ),
                 ],
@@ -173,7 +193,9 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Anda dapat langsung bertanya tentang layanan sebelum booking',
+                    isOtherUserBarber
+                        ? 'Anda dapat langsung bertanya tentang layanan sebelum booking'
+                        : 'Balas pertanyaan pelanggan tentang layanan Anda',
                     style: TextStyle(
                       color: Colors.green[700],
                       fontSize: 13,
@@ -190,7 +212,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _messages.isEmpty
-                    ? _buildEmptyState()
+                    ? _buildEmptyState(isOtherUserBarber)
                     : ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.all(16),
@@ -208,7 +230,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(bool isOtherUserBarber) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -220,7 +242,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Mulai percakapan dengan ${widget.barberName}',
+            'Mulai percakapan dengan ${widget.userName}',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -230,7 +252,9 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tanyakan tentang layanan, harga, atau ketersediaan jadwal',
+            isOtherUserBarber
+                ? 'Tanyakan tentang layanan, harga, atau ketersediaan jadwal'
+                : 'Jawab pertanyaan tentang layanan Anda',
             style: TextStyle(
               color: Colors.grey[600],
             ),
@@ -242,7 +266,10 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
   }
 
   Widget _buildMessageItem(DirectChatMessage message) {
-    final isCurrentUser = message.senderType == 'pelanggan'; // Sesuaikan dengan user type
+    final bool isCurrentUserBarber = _currentUserType == 'barber';
+    final bool isCurrentUser = isCurrentUserBarber 
+        ? message.senderType == 'barber' 
+        : message.senderType == 'pelanggan';
     
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -254,12 +281,12 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
             CircleAvatar(
               radius: 16,
               backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
-              backgroundImage: widget.barberPhoto != null
-                  ? NetworkImage(_getProfilePhotoUrl(widget.barberPhoto!))
+              backgroundImage: widget.userPhoto != null
+                  ? NetworkImage(_getProfilePhotoUrl(widget.userPhoto!))
                   : null,
-              child: widget.barberPhoto == null
+              child: widget.userPhoto == null
                   ? Icon(
-                      Icons.content_cut,
+                      isCurrentUserBarber ? Icons.person : Icons.content_cut,
                       size: 16,
                       color: Theme.of(context).primaryColor,
                     )
@@ -346,10 +373,12 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
               ),
               child: TextField(
                 controller: _messageController,
-                decoration: const InputDecoration(
-                  hintText: 'Tanyakan tentang layanan...',
+                decoration: InputDecoration(
+                  hintText: _currentUserType == 'barber'
+                      ? 'Balas pertanyaan pelanggan...'
+                      : 'Tanyakan tentang layanan...',
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 maxLines: null,
                 textCapitalization: TextCapitalization.sentences,

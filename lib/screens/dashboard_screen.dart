@@ -42,10 +42,10 @@
   Set<int> _selectedScheduleIds = {};
 
     
-  String? _getProfilePhotoUrl(String? photoPath) {
+ String? _getProfilePhotoUrl(String? photoPath) {
   if (photoPath == null || photoPath.isEmpty) return null;
   
-  // Gunakan Constants.buildProfilePhotoUrl untuk konsistensi
+  // Use Constants.buildProfilePhotoUrl for consistency
   return Constants.buildProfilePhotoUrl(photoPath);
 }
 
@@ -2509,7 +2509,6 @@
     );
   }
 
-    // Update _buildBarberCard dengan tombol chat
     Widget _buildBarberCard(BarberSearch barber) {
   return Container(
     margin: const EdgeInsets.only(bottom: 16),
@@ -2564,7 +2563,8 @@
                             );
                           },
                           errorBuilder: (context, error, stackTrace) {
-                            Constants.log('Error loading barber photo: $error');
+                            print('Debug - Error loading barber photo: $error');
+                            print('Debug - Failed URL: ${_getProfilePhotoUrl(barber.profilePhoto)}');
                             return Icon(
                               Icons.content_cut,
                               size: 32,
@@ -2697,19 +2697,27 @@
 }
 
   // Method baru untuk navigasi ke direct chat
-  void _navigateToDirectChat(BarberSearch barber) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => DirectChatScreen(
-          barberId: barber.id,
-          barberName: barber.nama,
-          barberPhoto: barber.profilePhoto,
-          barberSpesialisasi: barber.spesialisasi,
-        ),
+ void _navigateToDirectChat(BarberSearch barber) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => DirectChatScreen(
+        userId: barber.id,
+        userName: barber.nama,
+        userPhoto: barber.profilePhoto,
+        userSpesialisasi: barber.spesialisasi,
+        userType: 'barber', // Explicitly specify that this is a barber
       ),
-    );
-  }
+    ),
+  ).then((_) {
+    // Refresh chat list when returning from chat
+    if (_selectedIndex == 2) { // If on chat tab
+      setState(() {
+        // Trigger a refresh of the chat list screen
+      });
+    }
+  });
+}
 
 
     Widget _buildBookingCard(Booking booking) {

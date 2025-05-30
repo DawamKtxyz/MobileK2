@@ -25,9 +25,19 @@ class Constants {
   }
 
   /// Build profile photo URL specifically
-  static String? buildProfilePhotoUrl(String? photoPath) {
+   static String? buildProfilePhotoUrl(String? photoPath) {
     if (photoPath == null || photoPath.isEmpty) return null;
-    return buildStorageUrl(photoPath);
+    
+    // If it's already a full URL, return it as is
+    if (photoPath.startsWith('http')) return photoPath;
+    
+    // Otherwise, construct the storage URL
+    String baseUrl = Constants.baseUrl;
+    if (baseUrl.endsWith('/api')) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+    }
+    
+    return '$baseUrl/storage/$photoPath';
   }
 
   // Headers untuk request
