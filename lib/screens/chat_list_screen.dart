@@ -16,11 +16,26 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final ChatService _chatService = ChatService();
   List<DirectChat> _chats = [];
   bool _isLoading = true;
+  String? _currentUserType; // ✅ Store user type as state
 
   @override
   void initState() {
     super.initState();
-    _loadChats();
+    _initializeUserType();
+  }
+
+  // ✅ Load user type first, then load chats
+  Future<void> _initializeUserType() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _currentUserType = prefs.getString('user_type');
+      });
+      await _loadChats();
+    } catch (e) {
+      print('Debug - Error initializing user type: $e');
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _loadChats() async {
@@ -52,28 +67,41 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return Constants.buildProfilePhotoUrl(photoPath);
   }
 
+  // ✅ Fixed navigation with proper user type handling
   void _navigateToChat(DirectChat chat) {
-  final bool isCurrentUserBarber = _isUserBarber();
-  
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => DirectChatScreen(
-        userId: isCurrentUserBarber ? chat.pelangganId : chat.barberId,
-        userName: chat.otherUser.nama,
-        userPhoto: chat.otherUser.profilePhoto,
-        userSpesialisasi: chat.otherUser.spesialisasi,
-        userType: isCurrentUserBarber ? 'pelanggan' : 'barber',
-      ),
-    ),
-  ).then((_) => _loadChats());
-}
+    if (_currentUserType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: User type not loaded')),
+      );
+      return;
+    }
 
-bool _isUserBarber() {
-  final prefs = SharedPreferences.getInstance();
-  final userType = prefs.then((value) => value.getString('user_type'));
-  return userType == 'barber';
-}
+    final bool isCurrentUserBarber = _currentUserType == 'barber';
+    
+    // ✅ Fix: Use correct IDs based on current user type
+    final int targetUserId = isCurrentUserBarber ? chat.pelangganId : chat.barberId;
+    final String targetUserType = isCurrentUserBarber ? 'pelanggan' : 'barber';
+    
+    print('Debug - Navigation Info:');
+    print('Current User Type: $_currentUserType');
+    print('Is Current User Barber: $isCurrentUserBarber');
+    print('Target User ID: $targetUserId');
+    print('Target User Type: $targetUserType');
+    print('Chat - Barber ID: ${chat.barberId}, Pelanggan ID: ${chat.pelangganId}');
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DirectChatScreen(
+          userId: targetUserId,
+          userName: chat.otherUser.nama,
+          userPhoto: chat.otherUser.profilePhoto,
+          userSpesialisasi: chat.otherUser.spesialisasi,
+          userType: targetUserType,
+        ),
+      ),
+    ).then((_) => _loadChats());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +152,9 @@ bool _isUserBarber() {
           ),
           const SizedBox(height: 8),
           Text(
-            'Mulai percakapan dengan barber untuk bertanya tentang layanan',
+            _currentUserType == 'barber'
+                ? 'Percakapan dengan pelanggan akan muncul di sini'
+                : 'Mulai percakapan dengan barber untuk bertanya tentang layanan',
             style: TextStyle(
               color: Colors.grey[600],
             ),
@@ -152,7 +182,7 @@ bool _isUserBarber() {
           backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
           child: photoUrl == null
               ? Icon(
-                  Icons.content_cut,
+                  _currentUserType == 'barber' ? Icons.person : Icons.content_cut,
                   color: Theme.of(context).primaryColor,
                 )
               : null,
