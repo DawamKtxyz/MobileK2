@@ -18,11 +18,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _teleponController = TextEditingController();
   final _spesialisasiController = TextEditingController();
   final _hargaController = TextEditingController();
+  final _namaBankController = TextEditingController();      // Tambahan untuk nama bank
+  final _rekeningController = TextEditingController();      // Tambahan untuk nomor rekening
   final _authService = AuthService();
 
   bool _isLoading = false;
   bool _obscurePassword = true;
   PlatformFile? _selectedFile;
+
+  // List bank populer di Indonesia
+  final List<String> _bankList = [
+    'BCA',
+    'BRI',
+    'BNI',
+    'Mandiri',
+    'CIMB Niaga',
+    'BTN',
+    'Danamon',
+    'Permata',
+    'Maybank',
+    'OCBC NISP',
+    'BSI (Bank Syariah Indonesia)',
+    'Jenius',
+    'Digibank',
+    'Lainnya'
+  ];
+
+  String? _selectedBank;
 
   Future<void> _pickFile() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -67,7 +89,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
             : _spesialisasiController.text,
         'harga': _hargaController.text.isEmpty
             ? '20000'
-             : _hargaController.text.replaceAll(RegExp(r'[^\d]'), ''),
+            : _hargaController.text.replaceAll(RegExp(r'[^\d]'), ''),
+        'nama_bank': _selectedBank == 'Lainnya' 
+            ? _namaBankController.text 
+            : (_selectedBank ?? ''),                    // Tambahan nama bank
+        'rekening_barber': _rekeningController.text,    // Tambahan nomor rekening
       };
 
       final success = await _authService.register(
@@ -263,99 +289,242 @@ class _RegisterScreenState extends State<RegisterScreen> {
               
               const SizedBox(height: 24),
               
-              // Certificate upload
+              // Bank Information Section
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.grey[100],
+                  color: Colors.blue[50],
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: Colors.grey[300]!,
+                    color: Colors.blue[200]!,
                     width: 1,
                   ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Sertifikat Barber',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Upload sertifikat Anda dalam format PDF (maks. 2MB)',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    InkWell(
-                      onTap: _pickFile,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: _selectedFile != null 
-                              ? Theme.of(context).primaryColor.withOpacity(0.1) 
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _selectedFile != null 
-                                ? Theme.of(context).primaryColor 
-                                : Colors.grey[300]!,
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.account_balance,
+                          color: Colors.blue[600],
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Informasi Bank',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[800],
                           ),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              _selectedFile != null 
-                                  ? Icons.check_circle 
-                                  : Icons.upload_file,
-                              color: _selectedFile != null 
-                                  ? Theme.of(context).primaryColor 
-                                  : Colors.grey,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _selectedFile != null
-                                  ? _selectedFile!.name
-                                  : 'Pilih File',
-                              style: TextStyle(
-                                color: _selectedFile != null 
-                                    ? Theme.of(context).primaryColor 
-                                    : Colors.grey[800],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Digunakan untuk penerimaan pembayaran dari admin',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue[600],
                       ),
                     ),
                   ],
                 ),
               ),
               
+              const SizedBox(height: 16),
+              
+              // Bank Selection Dropdown
+              DropdownButtonFormField<String>(
+                value: _selectedBank,
+                decoration: InputDecoration(
+                  labelText: 'Pilih Bank',
+                  hintText: 'Pilih bank Anda',
+                  prefixIcon: const Icon(Icons.account_balance),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                items: _bankList.map((String bank) {
+                  return DropdownMenuItem<String>(
+                    value: bank,
+                    child: Text(bank),
+                  );
+                }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedBank = newValue;
+                  });
+                },
+                validator: (value) => value == null 
+                    ? 'Silakan pilih bank' 
+                    : null,
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Custom bank name field (shown only when "Lainnya" is selected)
+              if (_selectedBank == 'Lainnya')
+                Column(
+                  children: [
+                    TextFormField(
+                      controller: _namaBankController,
+                      decoration: InputDecoration(
+                        labelText: 'Nama Bank',
+                        hintText: 'Masukkan nama bank',
+                        prefixIcon: const Icon(Icons.business),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (_selectedBank == 'Lainnya' && (value == null || value.isEmpty)) {
+                          return 'Nama bank tidak boleh kosong';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              
+              // Account Number Field
+              TextFormField(
+                controller: _rekeningController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Nomor Rekening',
+                  hintText: 'Masukkan nomor rekening',
+                  prefixIcon: const Icon(Icons.credit_card),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator: (value) => value == null || value.isEmpty 
+                    ? 'Nomor rekening tidak boleh kosong' 
+                    : null,
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // Certificate Upload Section
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.orange[200]!,
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.upload_file,
+                          color: Colors.orange[600],
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Upload Sertifikat',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Upload sertifikat barber dalam format PDF (Maksimal 2MB)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // File picker button
+              InkWell(
+                onTap: _pickFile,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: _selectedFile != null 
+                          ? Colors.green 
+                          : Colors.grey[300]!,
+                      width: 2,
+                      style: BorderStyle.solid,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    color: _selectedFile != null 
+                        ? Colors.green[50] 
+                        : Colors.grey[50],
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        _selectedFile != null 
+                            ? Icons.check_circle 
+                            : Icons.cloud_upload_outlined,
+                        size: 48,
+                        color: _selectedFile != null 
+                            ? Colors.green 
+                            : Colors.grey[400],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _selectedFile != null 
+                            ? 'File terpilih: ${_selectedFile!.name}'
+                            : 'Tap untuk memilih file PDF',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: _selectedFile != null 
+                              ? Colors.green[700] 
+                              : Colors.grey[600],
+                          fontWeight: _selectedFile != null 
+                              ? FontWeight.bold 
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
               const SizedBox(height: 32),
               
+              // Register button
               SizedBox(
                 width: double.infinity,
+                height: 50,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _register,
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: Theme.of(context).primaryColor,
+                    foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child: _isLoading
                       ? const SizedBox(
-                          height: 24,
-                          width: 24,
+                          height: 20,
+                          width: 20,
                           child: CircularProgressIndicator(
                             color: Colors.white,
                             strokeWidth: 2,
@@ -373,25 +542,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
               
               const SizedBox(height: 16),
               
-              // Login link
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Sudah punya akun? ',
-                    style: TextStyle(color: Colors.grey[700]),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Text(
-                      'Login',
-                      style: TextStyle(
-                        color: Theme.of(context).primaryColor,
-                        fontWeight: FontWeight.bold,
+              // Login navigation
+              Center(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Sudah punya akun? ',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Text(
+                        'Login',
+                        style: TextStyle(
+                          color: Theme.of(context).primaryColor,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -408,6 +579,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _teleponController.dispose();
     _spesialisasiController.dispose();
     _hargaController.dispose();
+    _namaBankController.dispose();
+    _rekeningController.dispose();
     super.dispose();
   }
 }

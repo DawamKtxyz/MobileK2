@@ -31,38 +31,180 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _isLoading = true);
       
       try {
-        bool success;
-        
-        // Login based on selected user type
         if (_selectedUserType == UserType.barber) {
-          success = await _barberAuthService.login(
+          // Login untuk barber dengan pengecekan verifikasi
+          final result = await _barberAuthService.login(
             _emailController.text,
             _passwordController.text,
           );
+          
+          if (result['success'] == true) {
+            // Login berhasil
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const DashboardScreen()),
+            );
+          } else if (result['is_verified'] == false) {
+            // Akun belum diverifikasi
+            _showVerificationDialog(result['message'] ?? 'Akun belum diverifikasi');
+          } else {
+            // Login gagal (email/password salah)
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(result['message'] ?? 'Login gagal'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         } else {
-          success = await _pelangganAuthService.login(
+          // Login untuk pelanggan (tanpa verifikasi)
+          final success = await _pelangganAuthService.login(
             _emailController.text,
             _passwordController.text,
           );
-        }
-        
-        if (success) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const DashboardScreen()),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Login gagal. Periksa email dan password Anda.')),
-          );
+          
+          if (success) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const DashboardScreen()),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Login gagal. Periksa email dan password Anda.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       } finally {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  void _showVerificationDialog(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                color: Colors.orange,
+                size: 28,
+              ),
+              SizedBox(width: 8),
+              Text('Verifikasi Diperlukan'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                message,
+                style: TextStyle(fontSize: 16),
+              ),
+              SizedBox(height: 16),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.access_time,
+                      color: Colors.orange.shade700,
+                      size: 20,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Proses verifikasi biasanya memakan waktu 1-2 hari kerja.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.orange.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Optional: Check verification status
+                _checkVerificationStatus();
+              },
+              child: Text('Cek Status'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Mengerti'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _checkVerificationStatus() async {
+    setState(() => _isLoading = true);
+    
+    try {
+      final result = await _barberAuthService.checkVerificationStatus(
+        _emailController.text,
+      );
+      
+      if (result['success'] == true) {
+        String statusMessage = result['is_verified'] == true
+            ? 'Akun Anda sudah diverifikasi! Silakan login kembali.'
+            : 'Akun Anda masih dalam proses verifikasi.';
+            
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(statusMessage),
+            backgroundColor: result['is_verified'] == true 
+                ? Colors.green 
+                : Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Gagal mengecek status verifikasi'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -324,6 +466,37 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ],
                   ),
+                  
+                  // Info untuk barber
+                  if (_selectedUserType == UserType.barber)
+                    Container(
+                      margin: const EdgeInsets.only(top: 24),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.blue.shade700,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Barber harus diverifikasi oleh admin sebelum dapat login.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),

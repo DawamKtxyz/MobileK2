@@ -8,6 +8,7 @@ class Barber {
   final String? sertifikat;
   final String? profilePhoto;
   final double? persentaseKomisi;
+  final String? namaBank;        // Tambahan untuk nama bank
   final String? rekeningBarber;
   final String? createdAt;
   final String? updatedAt;
@@ -22,6 +23,7 @@ class Barber {
     this.sertifikat,
     this.profilePhoto,
     this.persentaseKomisi,
+    this.namaBank,            // Tambahan untuk nama bank
     this.rekeningBarber,
     this.createdAt,
     this.updatedAt,
@@ -42,6 +44,7 @@ class Barber {
               ? double.parse(json['persentase_komisi']) 
               : json['persentase_komisi'].toDouble())
           : null,
+      namaBank: json['nama_bank'],        // Tambahan untuk nama bank
       rekeningBarber: json['rekening_barber'],
       createdAt: json['created_at'],
       updatedAt: json['updated_at'],
@@ -59,6 +62,7 @@ class Barber {
       'sertifikat': sertifikat,
       'profile_photo': profilePhoto,
       'persentase_komisi': persentaseKomisi,
+      'nama_bank': namaBank,              // Tambahan untuk nama bank
       'rekening_barber': rekeningBarber,
       'created_at': createdAt,
       'updated_at': updatedAt,

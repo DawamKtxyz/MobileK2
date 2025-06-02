@@ -17,7 +17,7 @@ class BarberAuthService {
     }
   }
 
-  Future<bool> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(String email, String password) async {
     try {
       final url = _getUrl('barber/login');
       print('Trying to login barber at: $url');
@@ -45,99 +45,160 @@ class BarberAuthService {
       print('Login Response Status: ${response.statusCode}');
       print('Login Response Body: ${response.body}');
 
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final responseBody = json.decode(response.body);
+      final responseBody = json.decode(response.body);
 
+      if (response.statusCode == 200) {
+        // Login berhasil
         if (responseBody['success'] == true) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', responseBody['token']);
           await prefs.setString('barber', jsonEncode(responseBody['barber']));
           await prefs.setString('user_type', 'barber');
           print('Barber login successful! Token saved.');
-          return true;
-        } else {
-          print('Login failed: ${responseBody['message'] ?? 'Unknown error'}');
-          return false;
+          
+          return {
+            'success': true,
+            'message': responseBody['message'] ?? 'Login berhasil',
+            'barber': responseBody['barber'],
+          };
         }
-      } else {
-        print('Login failed with HTTP status: ${response.statusCode}');
-        // Cek apakah response berupa HTML (bisa jadi error server atau CORS)
-        if (response.body.contains('<!DOCTYPE html>')) {
-          throw Exception('Server returned HTML instead of JSON. Possible server error or CORS issue.');
-        }
-        try {
-          final errorBody = json.decode(response.body);
-          throw Exception(errorBody['message'] ?? 'Login failed with status ${response.statusCode}');
-        } catch (_) {
-          throw Exception('Login failed with status ${response.statusCode}. Cannot parse error body.');
-        }
+      } else if (response.statusCode == 403) {
+        // Akun belum diverifikasi
+        return {
+          'success': false,
+          'is_verified': false,
+          'message': responseBody['message'] ?? 'Akun belum diverifikasi',
+          'email': responseBody['email'] ?? email,
+        };
+      } else if (response.statusCode == 401) {
+        // Email atau password salah
+        return {
+          'success': false,
+          'message': responseBody['message'] ?? 'Email atau password salah',
+        };
       }
+
+      // Error lainnya
+      return {
+        'success': false,
+        'message': responseBody['message'] ?? 'Login gagal',
+      };
+
     } catch (e) {
       print('Login exception: $e');
       throw Exception('Login failed: $e');
     }
   }
 
-Future<bool> register(Map<String, dynamic> data) async {
-  try {
-    final url = _getUrl('barber/register');
-    print('Registering barber at: $url');
-    print('Registration data: $data');
+  Future<Map<String, dynamic>> register(Map<String, dynamic> data) async {
+    try {
+      final url = _getUrl('barber/register');
+      print('Registering barber at: $url');
+      print('Registration data: $data');
 
-    var request = http.MultipartRequest('POST', Uri.parse(url));
+      var request = http.MultipartRequest('POST', Uri.parse(url));
 
-    data.forEach((key, value) {
-      if (key != 'sertifikat' && value != null) {
-        // Perlakukan field harga secara khusus
-        if (key == 'harga') {
-          // Pastikan harga dikirim sebagai string angka yang valid
-          String hargaStr = value.toString().replaceAll('Rp ', '').trim();
-          hargaStr = hargaStr.replaceAll('.', '');
-          request.fields[key] = hargaStr;
-          print('Sending harga: $hargaStr'); // Log untuk debugging
-        } else {
-          request.fields[key] = value.toString();
+      data.forEach((key, value) {
+        if (key != 'sertifikat' && value != null) {
+          // Perlakukan field harga secara khusus
+          if (key == 'harga') {
+            // Pastikan harga dikirim sebagai string angka yang valid
+            String hargaStr = value.toString().replaceAll('Rp ', '').trim();
+            hargaStr = hargaStr.replaceAll('.', '');
+            request.fields[key] = hargaStr;
+            print('Sending harga: $hargaStr'); // Log untuk debugging
+          } else {
+            request.fields[key] = value.toString();
+          }
+        }
+      });
+
+      if (data['sertifikat'] != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'sertifikat',
+            data['sertifikat'],
+            filename: data['sertifikat'].split('/').last,
+          ),
+        );
+      }
+
+      // Debug: print semua fields yang dikirim
+      print('All fields being sent: ${request.fields}');
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      print('Registration Response Status: ${response.statusCode}');
+      print('Registration Response Body: ${response.body}');
+
+      final responseBody = json.decode(response.body);
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        if (responseBody['success'] == true) {
+          print('Registration successful!');
+          return {
+            'success': true,
+            'message': responseBody['message'] ?? 'Registrasi berhasil. Silakan tunggu verifikasi dari admin.',
+            'barber': responseBody['barber'],
+          };
         }
       }
-    });
 
-    if (data['sertifikat'] != null) {
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'sertifikat',
-          data['sertifikat'],
-          filename: data['sertifikat'].split('/').last,
-        ),
-      );
+      return {
+        'success': false,
+        'message': responseBody['message'] ?? 'Registrasi gagal',
+        'errors': responseBody['errors'],
+      };
+
+    } catch (e) {
+      print('Register exception: $e');
+      throw Exception('Register failed: $e');
     }
-
-    // Debug: print semua fields yang dikirim
-    print('All fields being sent: ${request.fields}');
-
-    final streamedResponse = await request.send();
-    final response = await http.Response.fromStream(streamedResponse);
-
-    print('Registration Response Status: ${response.statusCode}');
-    print('Registration Response Body: ${response.body}');
-
-    final responseBody = json.decode(response.body);
-
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      if (responseBody['success'] == true) {
-        print('Registration successful!');
-        return true;
-      } else {
-        print('Registration failed: ${responseBody['message'] ?? 'Unknown error'}');
-        return false;
-      }
-    } else {
-      throw Exception(responseBody['message'] ?? 'Registration failed with status ${response.statusCode}');
-    }
-  } catch (e) {
-    print('Register exception: $e');
-    throw Exception('Register failed: $e');
   }
-}
+
+  Future<Map<String, dynamic>> checkVerificationStatus(String email) async {
+    try {
+      final url = _getUrl('barber/check-verification');
+      print('Checking verification status at: $url');
+
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: jsonEncode({'email': email}),
+      );
+
+      print('Verification Check Response Status: ${response.statusCode}');
+      print('Verification Check Response Body: ${response.body}');
+
+      final responseBody = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'is_verified': responseBody['is_verified'] ?? false,
+          'verified_at': responseBody['verified_at'],
+          'message': responseBody['message'] ?? '',
+        };
+      }
+
+      return {
+        'success': false,
+        'message': responseBody['message'] ?? 'Gagal memeriksa status verifikasi',
+      };
+
+    } catch (e) {
+      print('Check verification exception: $e');
+      return {
+        'success': false,
+        'message': 'Error: $e',
+      };
+    }
+  }
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
@@ -199,7 +260,6 @@ Future<bool> register(Map<String, dynamic> data) async {
       throw Exception('Failed to get profile: $e');
     }
   }
-  // Add these methods to barber_auth_service.dart
 
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
     try {
@@ -244,6 +304,23 @@ Future<bool> register(Map<String, dynamic> data) async {
     } catch (e) {
       print('Update profile exception: $e');
       throw Exception('Update profile failed: $e');
+    }
+  }
+
+  Future<Barber?> getCurrentBarber() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final barberJson = prefs.getString('barber');
+      
+      if (barberJson != null) {
+        final barberData = json.decode(barberJson);
+        return Barber.fromJson(barberData);
+      }
+      
+      return null;
+    } catch (e) {
+      print('Error getting current barber: $e');
+      return null;
     }
   }
 }

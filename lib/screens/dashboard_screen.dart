@@ -18,6 +18,7 @@ import '../services/barber_service.dart';
 import '../services/pelanggan_service.dart';
 import '../utils/constants.dart';
 import 'edit_profile_screen.dart';
+import 'payment_screen.dart';
 import 'login_screen.dart';
 
   class DashboardScreen extends StatefulWidget {
@@ -25,6 +26,54 @@ import 'login_screen.dart';
 
     @override
     State<DashboardScreen> createState() => _DashboardScreenState();
+  }
+
+    Booking _createBookingFromData(Map<String, dynamic> bookingData) {
+    try {
+      print('bookingData: $bookingData'); // Tambahkan ini
+
+      final nominal = double.tryParse(bookingData['service_fee'].toString()) ?? 0;
+      final ongkir = double.tryParse(bookingData['delivery_fee'].toString()) ?? 0;
+      final total = double.tryParse(bookingData['total_amount'].toString()) ?? nominal + ongkir;
+
+
+      final Map<String, dynamic> processedData = {
+        'id': bookingData['id'] ?? 0,
+        'id_transaksi': bookingData['id_transaksi'] ?? 'TXN-${DateTime.now().millisecondsSinceEpoch}',
+        'status': 'pending',
+        'can_cancel': true,
+        'created_at': DateTime.now().toIso8601String(),
+
+        'barber': {
+          'id': bookingData['id_barber'] ?? 0,
+          'nama': bookingData['barber_nama'] ?? 'Barber',
+          'spesialisasi': 'Layanan Barbershop',
+        },
+
+        'jadwal': {
+          'tanggal': bookingData['tanggal'] ?? DateTime.now().toIso8601String().split('T')[0],
+          'jam': bookingData['jam'] ?? '10:00',
+        },
+
+        'booking_details': {
+          'alamat_lengkap': bookingData['alamat_lengkap'] ?? 'Alamat tidak tersedia',
+          'email': bookingData['email'] ?? '',
+          'telepon': bookingData['telepon'] ?? '',
+          'total_amount': nominal + ongkir,
+          'ongkos_kirim': ongkir,
+          'service_fee': nominal,
+        },
+
+        'pelanggan': {
+          'nama': bookingData['pelanggan_nama'] ?? 'Pelanggan',
+        },
+      };
+
+      return Booking.fromJson(processedData);
+    } catch (e) {
+      print('Error creating booking: $e');
+      rethrow;
+    }
   }
 
   class _DashboardScreenState extends State<DashboardScreen> {
@@ -2348,24 +2397,6 @@ if (_stats != null) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                // Chat button
-  OutlinedButton.icon(
-    onPressed: () {
-      // Navigasi chat belum diimplementasikan
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Fitur chat belum tersedia')),
-      );
-    },
-    icon: const Icon(Icons.chat_bubble_outline, size: 16),
-    label: const Text('Chat'),
-    style: OutlinedButton.styleFrom(
-      foregroundColor: Colors.blue,
-      side: const BorderSide(color: Colors.blue),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-      minimumSize: const Size(0, 32),
-    ),
-  ),
-                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: () {
                     // Implementasi untuk menghubungi pelanggan
@@ -3292,24 +3323,24 @@ if (_stats != null) ...[
                     ],
                     
                     // Chat button (only if paid)
-  if (booking.bookingDetails.statusPembayaran == 'paid') ...[
-    OutlinedButton.icon(
-      onPressed: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Fitur chat belum tersedia')),
-        );
-      },
-      icon: const Icon(Icons.chat_bubble_outline, size: 16),
-      label: const Text('Chat'),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.blue,
-        side: const BorderSide(color: Colors.blue),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-        minimumSize: const Size(0, 32),
-      ),
-    ),
-    const SizedBox(width: 8),
-  ],
+                    if (booking.bookingDetails.statusPembayaran == 'paid') ...[
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Fitur chat belum tersedia')),
+                          );
+                        },
+                        icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                        label: const Text('Chat'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.blue,
+                          side: const BorderSide(color: Colors.blue),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                          minimumSize: const Size(0, 32),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     
                     // Cancel button
                     if (booking.canCancel) ...[
@@ -4191,12 +4222,34 @@ if (_stats != null) ...[
                 child: const Text('Nanti'),
               ),
               ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  // Navigate to payment screen
-                  // You'll need to create a Booking object from bookingData
-                  // and navigate to PaymentScreen
-                  widget.onBookingSuccess();
+                onPressed: () async {
+                  Navigator.pop(context); // Tutup dialog dulu
+                  
+                  try {
+                    // Buat booking object
+                    final booking = _createBookingFromData(bookingData);
+                    
+                    // Navigate ke PaymentScreen
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PaymentScreen(booking: booking),
+                      ),
+                    );
+                    
+                    // Panggil callback success
+                    widget.onBookingSuccess();
+                    
+                  } catch (e) {
+                    // Tampilkan error jika ada masalah
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    widget.onBookingSuccess();
+                  }
                 },
                 child: const Text('Bayar Sekarang'),
               ),
