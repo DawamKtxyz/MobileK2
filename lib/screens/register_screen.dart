@@ -16,6 +16,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _teleponController = TextEditingController();
+  final _alamatController = TextEditingController();
   final _spesialisasiController = TextEditingController();
   final _hargaController = TextEditingController();
   final _namaBankController = TextEditingController();      // Tambahan untuk nama bank
@@ -84,14 +85,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'email': _emailController.text,
         'password': _passwordController.text,
         'telepon': _teleponController.text,
+        'alamat': _alamatController.text,                   // Tambahan alamat
         'spesialisasi': _spesialisasiController.text.isEmpty
             ? ''
             : _spesialisasiController.text,
         'harga': _hargaController.text.isEmpty
             ? '20000'
             : _hargaController.text.replaceAll(RegExp(r'[^\d]'), ''),
-        'nama_bank': _selectedBank == 'Lainnya' 
-            ? _namaBankController.text 
+        'nama_bank': _selectedBank == 'Lainnya'
+            ? _namaBankController.text
             : (_selectedBank ?? ''),                    // Tambahan nama bank
         'rekening_barber': _rekeningController.text,    // Tambahan nomor rekening
       };
@@ -160,9 +162,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 32),
-              
+
               // Form fields
               TextFormField(
                 controller: _namaController,
@@ -174,13 +176,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                validator: (value) => value == null || value.isEmpty 
-                    ? 'Nama tidak boleh kosong' 
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Nama tidak boleh kosong'
                     : null,
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               TextFormField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
@@ -202,9 +204,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   return null;
                 },
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               TextFormField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
@@ -214,9 +216,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword 
-                        ? Icons.visibility_off 
-                        : Icons.visibility,
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                     ),
                     onPressed: () {
                       setState(() {
@@ -238,9 +240,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   return null;
                 },
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               TextFormField(
                 controller: _teleponController,
                 keyboardType: TextInputType.phone,
@@ -252,13 +254,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                validator: (value) => value == null || value.isEmpty 
-                    ? 'Nomor telepon tidak boleh kosong' 
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Nomor telepon tidak boleh kosong'
                     : null,
               ),
-              
+
               const SizedBox(height: 16),
-              
+
+              // Field Alamat (ditambahkan)
+              TextFormField(
+                controller: _alamatController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  labelText: 'Alamat',
+                  hintText: 'Masukkan alamat lengkap Anda',
+                  prefixIcon: const Icon(Icons.location_on_outlined),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignLabelWithHint: true,
+                ),
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Alamat tidak boleh kosong'
+                    : null,
+              ),
+
+              const SizedBox(height: 16),
+
               TextFormField(
                 controller: _spesialisasiController,
                 decoration: InputDecoration(
@@ -270,9 +292,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               TextFormField(
                 controller: _hargaController,
                 keyboardType: TextInputType.number,
@@ -286,9 +308,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Bank Information Section
               Container(
                 width: double.infinity,
@@ -333,9 +355,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Bank Selection Dropdown
               DropdownButtonFormField<String>(
                 value: _selectedBank,
@@ -358,13 +380,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     _selectedBank = newValue;
                   });
                 },
-                validator: (value) => value == null 
-                    ? 'Silakan pilih bank' 
+                validator: (value) => value == null
+                    ? 'Silakan pilih bank'
                     : null,
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Custom bank name field (shown only when "Lainnya" is selected)
               if (_selectedBank == 'Lainnya')
                 Column(
@@ -389,7 +411,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 16),
                   ],
                 ),
-              
+
               // Account Number Field
               TextFormField(
                 controller: _rekeningController,
@@ -402,13 +424,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                validator: (value) => value == null || value.isEmpty 
-                    ? 'Nomor rekening tidak boleh kosong' 
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Nomor rekening tidak boleh kosong'
                     : null,
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Certificate Upload Section
               Container(
                 width: double.infinity,
@@ -453,9 +475,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // File picker button
               InkWell(
                 onTap: _pickFile,
@@ -464,40 +486,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     border: Border.all(
-                      color: _selectedFile != null 
-                          ? Colors.green 
+                      color: _selectedFile != null
+                          ? Colors.green
                           : Colors.grey[300]!,
                       width: 2,
                       style: BorderStyle.solid,
                     ),
                     borderRadius: BorderRadius.circular(12),
-                    color: _selectedFile != null 
-                        ? Colors.green[50] 
+                    color: _selectedFile != null
+                        ? Colors.green[50]
                         : Colors.grey[50],
                   ),
                   child: Column(
                     children: [
                       Icon(
-                        _selectedFile != null 
-                            ? Icons.check_circle 
+                        _selectedFile != null
+                            ? Icons.check_circle
                             : Icons.cloud_upload_outlined,
                         size: 48,
-                        color: _selectedFile != null 
-                            ? Colors.green 
+                        color: _selectedFile != null
+                            ? Colors.green
                             : Colors.grey[400],
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        _selectedFile != null 
+                        _selectedFile != null
                             ? 'File terpilih: ${_selectedFile!.name}'
                             : 'Tap untuk memilih file PDF',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: _selectedFile != null 
-                              ? Colors.green[700] 
+                          color: _selectedFile != null
+                              ? Colors.green[700]
                               : Colors.grey[600],
-                          fontWeight: _selectedFile != null 
-                              ? FontWeight.bold 
+                          fontWeight: _selectedFile != null
+                              ? FontWeight.bold
                               : FontWeight.normal,
                         ),
                       ),
@@ -505,9 +527,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 32),
-              
+
               // Register button
               SizedBox(
                 width: double.infinity,
@@ -523,25 +545,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   child: _isLoading
                       ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
                       : const Text(
-                          'Daftar',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                    'Daftar',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Login navigation
               Center(
                 child: Row(
@@ -577,6 +599,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _teleponController.dispose();
+    _alamatController.dispose();
     _spesialisasiController.dispose();
     _hargaController.dispose();
     _namaBankController.dispose();

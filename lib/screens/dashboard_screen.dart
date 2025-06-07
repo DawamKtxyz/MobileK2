@@ -1252,7 +1252,7 @@ bool _hasMorePenggajian = true;
       ),
     ),
     child: CircleAvatar(
-      radius: 40,
+      radius: 20,
       backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
       child: photoUrl != null 
           ? ClipOval(
